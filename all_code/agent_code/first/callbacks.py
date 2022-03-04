@@ -6,7 +6,8 @@ import numpy as np
 from sklearn.tree import DecisionTreeRegressor
 
 
-ACTIONS = ['UP', 'RIGHT', 'DOWN', 'LEFT', 'WAIT', 'BOMB']
+#ACTIONS = ['UP', 'RIGHT', 'DOWN', 'LEFT', 'WAIT', 'BOMB']
+ACTIONS = ['UP', 'RIGHT', 'DOWN', 'LEFT', 'WAIT']
 
 def setup(self):
     """
@@ -45,25 +46,19 @@ def act(self, game_state: dict) -> str:
     if self.train and random.random() < random_prob:
         self.logger.debug("Choosing action purely at random.\n")
         # 80%: walk in any direction. 10% wait. 10% bomb.
-        return np.random.choice(ACTIONS, p=[.2, .2, .2, .2, .1, .1])
+        return np.random.choice(ACTIONS, p=[.2, .2, .2, .2, .2])
 
     #self.logger.debug("Querying model for action.")
-    features = state_to_features(game_state, self)
+    features = state_to_features(game_state)
     self.logger.debug(f'Adjacent:  {features}')
     prediction = self.model.predict(features)[0]
-    self.logger.debug(f'Prediction:  {prediction}')  
-
-    if np.sum(prediction) == 0:
-        action = np.random.choice(ACTIONS, p=[.2, .2, .2, .2, .1, .1])
-        self.logger.debug(f'Action:  {action}\n')
-        return action
-    
-    action = np.random.choice(ACTIONS, p=prediction/np.sum(prediction))
-    self.logger.debug(f'Action:  {action}\n')
-    return action
+    self.logger.debug(f'Prediction:  {prediction}\n')    
+    if np.sum(prediction)==0:
+        return np.random.choice(ACTIONS, p=[.2, .2, .2, .2, .2])
+    return np.random.choice(ACTIONS, p=prediction/np.sum(prediction))
 
 
-def state_to_features(game_state: dict, self) -> np.array:
+def state_to_features(game_state: dict) -> np.array:
     """
     *This is not a required function, but an idea to structure your code.*
 
@@ -96,48 +91,12 @@ def state_to_features(game_state: dict, self) -> np.array:
                         field[position[0] + 1, position[1]],
                         field[position[0]    , position[1] + 1],
                         field[position[0] - 1, position[1]]])
-    #return adjacent.reshape(1, -1)
-    
-    #get position of nearest bomb
-    nearest_bomb = [20, 20]
-    boom = -1
-    self.logger.debug(f'Position : {position}')
-    for i in list(bombs):
-        b_pos = i[0]
-        self.logger.debug(f'Bomb Position: {b_pos} - nearest: {nearest_bomb}')
-        if np.linalg.norm(np.subtract(b_pos, position)) < np.linalg.norm(nearest_bomb):
-            nearest_bomb[0] = b_pos[0] - position[0]
-            nearest_bomb[1] = b_pos[1] - position[1]
-            self.logger.debug(f'closer!')
-            boom = i[1]
-    #check explosion map:
-    if explosion_map[position[0], position[1] - 1] > 0:
-        self.logger.debug(f'1 boom!')
-        nearest_bomb = [0, -1]
-        boom = 0
-    if explosion_map[position[0] + 1, position[1]] > 0:
-        self.logger.debug(f'2 boom!')
-        nearest_bomb = [1, 0]
-        boom = 0
-    if explosion_map[position[0], position[1] + 1] > 0:
-        self.logger.debug(f'3 boom!')
-        nearest_bomb = [0, 1]
-        boom = 0
-    if explosion_map[position[0] - 1, position[1] ] > 0:
-        self.logger.debug(f'4 boom!')
-        nearest_bomb = [-1, 0]
-        boom = 0
-
+    return adjacent.reshape(1, -1)
+ 
     # For example, you could construct several channels of equal shape, ...
-    channels = adjacent.tolist() + [bomb] + nearest_bomb + [boom]
-    #channels.append(bomb)
-    #channels.append(list(position))
-    #channels.append(list(bombs))
-    
-    
-
+    channels = []
+    channels.append(adjacent)
     # concatenate them as a feature tensor (they must have the same shape), ...
     stacked_channels = np.stack(channels)
-    #print(stacked_channels)
     # and return them as a vector
-    return stacked_channels.reshape(1, -1)
+    return stacked_channels.reshape(-1)
