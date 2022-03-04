@@ -50,10 +50,14 @@ def act(self, game_state: dict) -> str:
     #self.logger.debug("Querying model for action.")
     features = state_to_features(game_state, self)
     self.logger.debug(f'Adjacent:  {features}')
+    
     prediction = self.model.predict(features)[0]
     self.logger.debug(f'Prediction:  {prediction}')  
 
     if np.sum(prediction) == 0:
+        if self.train:
+            idx_s = ((self.X == features).all(axis=1).nonzero())[0]
+            self.y[idx_s] = [10, 10, 10, 10, 5, 5]
         action = np.random.choice(ACTIONS, p=[.2, .2, .2, .2, .1, .1])
         self.logger.debug(f'Action:  {action}\n')
         return action
@@ -79,8 +83,7 @@ def state_to_features(game_state: dict, self) -> np.array:
     """
     # This is the dict before the game begins and after it ends
     if game_state is None:
-        return None
-    
+        return  np.array([-100, -100, -100, -100, -100, -100]).reshape(1, -1)
     round = game_state['round']
     step = game_state['step']
     field = game_state['field']
@@ -91,26 +94,16 @@ def state_to_features(game_state: dict, self) -> np.array:
     others = game_state['others']
     user_input = game_state['user_input']
     
-    #top, right, bottom, left, (?)
+    #top, right, bottom, left, current
     adjacent = np.array([field[position[0]    , position[1] - 1],
                         field[position[0] + 1, position[1]],
                         field[position[0]    , position[1] + 1],
-                        field[position[0] - 1, position[1]]])
+                        field[position[0] - 1, position[1]],
+                        0])
+                        
     #return adjacent.reshape(1, -1)
-    
-    #get position of nearest bomb
-    nearest_bomb = [20, 20]
-    boom = -1
-    self.logger.debug(f'Position : {position}')
-    for i in list(bombs):
-        b_pos = i[0]
-        self.logger.debug(f'Bomb Position: {b_pos} - nearest: {nearest_bomb}')
-        if np.linalg.norm(np.subtract(b_pos, position)) < np.linalg.norm(nearest_bomb):
-            nearest_bomb[0] = b_pos[0] - position[0]
-            nearest_bomb[1] = b_pos[1] - position[1]
-            self.logger.debug(f'closer!')
-            boom = i[1]
-    #check explosion map:
+    adjacent = abs(adjacent)
+
     if explosion_map[position[0], position[1] - 1] > 0:
         self.logger.debug(f'1 boom!')
         nearest_bomb = [0, -1]
@@ -125,6 +118,74 @@ def state_to_features(game_state: dict, self) -> np.array:
         boom = 0
     if explosion_map[position[0] - 1, position[1] ] > 0:
         self.logger.debug(f'4 boom!')
+        nearest_bomb = [-1, 0]
+        boom = 0
+    explosion = np.array([explosion_map[position[0]    , position[1] - 1],
+                        explosion_map[position[0] + 1, position[1]],
+                        explosion_map[position[0]    , position[1] + 1],
+                        explosion_map[position[0] - 1, position[1]],
+                        explosion_map[position[0]    , position[1]]
+                        ])
+    info = np.maximum(adjacent, explosion)
+    
+    
+    current_bomb = [0,0]
+    for i in list(bombs):
+        b_pos = i[0]
+        current_bomb[0] = b_pos[0] - position[0]
+        current_bomb[1] = b_pos[1] - position[1]
+        #self.logger.debug(f'Bomb Position: {b_pos} - nearest: {nearest_bomb}')
+        countdown = -i[1] - 1
+        if np.linalg.norm(current_bomb) < 6:
+            self.logger.debug(f'current bomb: {current_bomb} - i[1]: {i[1]}')
+            if current_bomb[1] == 0:
+                if current_bomb[0] < 0:
+                    info[0] = countdown
+                    self.logger.debug(f'bomb up')
+                if current_bomb[0] > 0:
+                    info[2] = countdown
+                    self.logger.debug(f'bomb down')
+                if current_bomb[0] == 0:
+                    info[4] = countdown
+                    self.logger.debug(f'bomb same position')
+            if current_bomb[0] == 0:
+                if current_bomb[1] < 0:
+                    info[3] = countdown
+                    self.logger.debug(f'bomb left')
+                if current_bomb[1] > 0:
+                    info[1] = countdown
+                    self.logger.debug(f'bomb right')
+    
+    self.logger.debug(f'adjacent : {adjacent}, explosion : {explosion}, info : {info}')
+    return np.append(info, bomb).reshape(1, -1)
+    
+    #get position of nearest bomb
+    nearest_bomb = [20, 20]
+    boom = -1
+    #self.logger.debug(f'Position : {position}')
+    for i in list(bombs):
+        b_pos = i[0]
+        #self.logger.debug(f'Bomb Position: {b_pos} - nearest: {nearest_bomb}')
+        if np.linalg.norm(np.subtract(b_pos, position)) < np.linalg.norm(nearest_bomb):
+            nearest_bomb[0] = b_pos[0] - position[0]
+            nearest_bomb[1] = b_pos[1] - position[1]
+            #self.logger.debug(f'closer!')
+            boom = i[1]
+    #check explosion map:
+    if explosion_map[position[0], position[1] - 1] > 0:
+        #self.logger.debug(f'1 boom!')
+        nearest_bomb = [0, -1]
+        boom = 0
+    if explosion_map[position[0] + 1, position[1]] > 0:
+        #self.logger.debug(f'2 boom!')
+        nearest_bomb = [1, 0]
+        boom = 0
+    if explosion_map[position[0], position[1] + 1] > 0:
+        #self.logger.debug(f'3 boom!')
+        nearest_bomb = [0, 1]
+        boom = 0
+    if explosion_map[position[0] - 1, position[1] ] > 0:
+        #self.logger.debug(f'4 boom!')
         nearest_bomb = [-1, 0]
         boom = 0
 
