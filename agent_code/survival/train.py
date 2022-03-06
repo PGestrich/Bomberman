@@ -19,9 +19,9 @@ Transition = namedtuple('Transition',
 TRANSITION_HISTORY_SIZE = 5  # keep only ... last transitions
 RECORD_ENEMY_TRANSITIONS = 1.0  # record enemy transitions with probability ...
 ACTIONS = ['UP', 'RIGHT', 'DOWN', 'LEFT', 'WAIT', 'BOMB']
-dead_state = [0]*6
+#dead_state = [0]*6
 SUICIDE = "SUICIDE"
-None_state = np.array([-100, -100, -100, -100, -100, -100]).reshape(1, -1)
+dead_state = np.array([-100, -100, -100, -100, -100, -100]).reshape(1, -1)
 
 
 
@@ -37,11 +37,11 @@ def setup_training(self):
     # (s, a, r, s')
 
     #y: array that saves rewards per action
-    self.y = np.array([10, 10, 10, 10, 5, 0]).reshape(1, -1)
+    self.y = np.array([0]*6).reshape(1, -1)
 
     #X: array that saves state before action
     #self.X  = np.array([0, 0,  0, 0, 1, 20, 20, -1]).reshape(1, -1)
-    self.X  = None_state #np.array([0, 0,  0, 0, 0, 1]).reshape(1, -1)
+    self.X  = dead_state #np.array([0, 0,  0, 0, 0, 1]).reshape(1, -1)
     self.model.fit(self.X, self.y)
 
     self.transitions = deque(maxlen=TRANSITION_HISTORY_SIZE)
@@ -70,6 +70,8 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
         return None
     
     self.logger.debug(f'Encountered game event(s) {events} in step {new_game_state["step"]}')
+
+    
     
     #self.logger.debug(f'model: {self.model}')
     # Idea: Add your own events to hand out rewards
@@ -95,6 +97,8 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
     idx_action = ACTIONS.index(self_action)
     self.transitions.append(Transition(old_features, self_action, new_features,  reward_from_events(self, events)))
     self.y[idx_s, idx_action] = q_learn(self, old_features, self_action, new_features, events, idx_s)
+
+
     #self.y[idx_s, idx_action] = (self.y[idx_s, idx_action] + reward)/2
     self.model.fit(self.X, np.nan_to_num(self.y))
 
@@ -142,14 +146,10 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
         
         for t in self.transitions:
             self.logger.debug(f'transition: {t.action}')
-            #discourage bomb dropping - for some reason it kills itself due to waiting?
-            if t.action in ['BOMB', 'WAIT']:
-                idx_s = ((self.X == t.state).all(axis=1).nonzero())[0]
-                q_learn(self, t.state, t.action, dead_state, ['SUICIDE'], idx_s)
-            #Discourage other behaviours
-            else:
-                idx_s = ((self.X == t.state).all(axis=1).nonzero())[0]
-                q_learn(self, t.state, t.action, dead_state, ['KILLED_SELF'], idx_s)
+            #discourage suicidal behaviour
+            idx_action = ACTIONS.index(t.action)
+            idx_s = ((self.X == t.state).all(axis=1).nonzero())[0]
+            self.y[idx_s, idx_action] = q_learn(self, t.state, t.action, dead_state, ['KILLED_SELF'], idx_s)
     self.model.fit(self.X, np.nan_to_num(self.y))
 
     # Store the model
@@ -166,15 +166,16 @@ def reward_from_events(self, events: List[str]) -> int:
     certain behavior.
     """
     game_rewards = {
-        e.INVALID_ACTION: -100,
-        e.WAITED: 5,
+        e.INVALID_ACTION: -1000,
+        e.WAITED: 0,
         e.MOVED_UP: 10,
         e.MOVED_DOWN: 10,
         e.MOVED_RIGHT: 10,
         e.MOVED_LEFT: 10,
-        e.BOMB_DROPPED: 1,
-        e.GOT_KILLED: 0,
-        e.KILLED_SELF: 0,
+        e.BOMB_DROPPED: 50,
+        e.GOT_KILLED: -100,
+        e.KILLED_SELF: -100,
+        #e.BOMB_EXPLODED: 100,
         SUICIDE: -10  # idea: the custom event is bad
     }
     reward_sum = 0
@@ -190,8 +191,8 @@ def q_learn(self, old_state, self_action: str, new_state, events: List[str], idx
     Calculate new reward
     """
 
-    GAMMA = 0.5
-    ALPHA = 0.8
+    GAMMA = 0.8
+    ALPHA = 0.9
 
     
     
@@ -211,11 +212,12 @@ def q_learn(self, old_state, self_action: str, new_state, events: List[str], idx
         self.X = np.vstack((self.X, new_state))
         idx_new = [len(self.y)-1]
     
-    q_max = np.amax(self.y[idx_new])
+    new_pred = self.y[idx_new]
+    q_max = np.amax(new_pred)
 
     q_new = q_old + ALPHA*(reward + GAMMA*q_max - q_old)
     q_new = np.maximum(q_new, 0)
-    self.logger.debug(f'change {q_old} to  {q_new} with reward {reward}\n')
+    self.logger.debug(f'change {q_old} to  {q_new} with reward {reward}, q_max = {q_max} since new_state= {new_pred}\n')
 
     return q_new
 
