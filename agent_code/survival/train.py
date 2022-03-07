@@ -21,7 +21,7 @@ RECORD_ENEMY_TRANSITIONS = 1.0  # record enemy transitions with probability ...
 ACTIONS = ['UP', 'RIGHT', 'DOWN', 'LEFT', 'WAIT', 'BOMB']
 #dead_state = [0]*6
 SUICIDE = "SUICIDE"
-dead_state = np.array([-100, -100, -100, -100, -100, -100]).reshape(1, -1)
+dead_state = np.array([-100, -100, -100, -100, -100]).reshape(1, -1)
 
 
 
@@ -78,8 +78,9 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
     
     # state_to_features is defined in callbacks.py
     old_features = state_to_features(old_game_state, self)
+    self.logger.debug(f"Old Features: {old_features}")
     new_features = state_to_features(new_game_state, self)
-    self.logger.debug(f"Features: {old_features}")
+    self.logger.debug(f"New Features: {new_features}")
     
     #Index: find if state was already present in dataset
     idx_s = ((self.X == old_features).all(axis=1).nonzero())[0]
@@ -146,10 +147,12 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
         
         for t in self.transitions:
             self.logger.debug(f'transition: {t.action}')
-            #discourage suicidal behaviour
-            idx_action = ACTIONS.index(t.action)
-            idx_s = ((self.X == t.state).all(axis=1).nonzero())[0]
-            self.y[idx_s, idx_action] = q_learn(self, t.state, t.action, dead_state, ['KILLED_SELF'], idx_s)
+
+            #quickly discourage suicidal behaviour (waiting for bomb to explode)
+            if t.action in ['WAIT', 'BOMB']:
+                idx_action = ACTIONS.index(t.action)
+                idx_s = ((self.X == t.state).all(axis=1).nonzero())[0]
+                self.y[idx_s, idx_action] = q_learn(self, t.state, t.action, dead_state, ['SUIZIDE'], idx_s)
     self.model.fit(self.X, np.nan_to_num(self.y))
 
     # Store the model
@@ -176,7 +179,7 @@ def reward_from_events(self, events: List[str]) -> int:
         e.GOT_KILLED: -100,
         e.KILLED_SELF: -100,
         #e.BOMB_EXPLODED: 100,
-        SUICIDE: -10  # idea: the custom event is bad
+        SUICIDE: 0  # idea: the custom event is bad
     }
     reward_sum = 0
     for event in events:
@@ -221,3 +224,6 @@ def q_learn(self, old_state, self_action: str, new_state, events: List[str], idx
 
     return q_new
 
+
+def augment_data(self):
+    self.logger.debug(f'In augment data')

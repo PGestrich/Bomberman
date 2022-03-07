@@ -94,33 +94,39 @@ def state_to_features(game_state: dict, self) -> np.array:
     name, score, bomb, position = game_state['self']
     others = game_state['others']
     user_input = game_state['user_input']
+    self.logger.debug(f'position: {position}')
     
     #top, right, bottom, left, current
-    adjacent = np.array([field[position[0]    , position[1] - 1],
-                        field[position[0] + 1, position[1]],
-                        field[position[0]    , position[1] + 1],
-                        field[position[0] - 1, position[1]],
-                        0])
+    top, top_pos = 0, (position[0] , position[1] - 1)
+    right, right_pos = 1, (position[0] + 1, position[1])
+    bottom, bottom_pos = 2, (position[0] , position[1] + 1)
+    left, left_pos = 3, (position[0]  - 1, position[1])
+    current = 4
+    adjacent = np.array([2*abs(field[top_pos]),
+                        2*abs(field[right_pos]),
+                        2*abs(field[bottom_pos ]),
+                        2*abs(field[left_pos]),
+                        - bomb])
+    
+    for agent in others:
+        agent_pos = agent[3]
+        if agent_pos == top_pos:
+            adjacent[top] = 2
+        if agent_pos == right_pos:
+            adjacent[right] = 2
+        if agent_pos == bottom_pos:
+            adjacent[bottom] = 2
+        if agent_pos == left_pos:
+            adjacent[left] = 2
                         
     #return adjacent.reshape(1, -1)
-    adjacent = abs(adjacent)
-
-    if explosion_map[position[0], position[1] - 1] > 0:
-        self.logger.debug(f'1 boom!')
-    if explosion_map[position[0] + 1, position[1]] > 0:
-        self.logger.debug(f'2 boom!')
-    if explosion_map[position[0], position[1] + 1] > 0:
-        self.logger.debug(f'3 boom!')
-    if explosion_map[position[0] - 1, position[1] ] > 0:
-        self.logger.debug(f'4 boom!')
-
-    explosion = np.array([explosion_map[position[0]    , position[1] - 1],
-                        explosion_map[position[0] + 1, position[1]],
-                        explosion_map[position[0]    , position[1] + 1],
-                        explosion_map[position[0] - 1, position[1]],
-                        explosion_map[position[0]    , position[1]]
+    explosion = np.array([explosion_map[top_pos ],
+                        explosion_map[right_pos],
+                        explosion_map[bottom_pos ],
+                        explosion_map[left_pos],
+                        explosion_map[position]
                         ])
-    info = adjacent -explosion
+    info = adjacent + 3*explosion
     
     
     current_bomb = [0,0]
@@ -129,55 +135,58 @@ def state_to_features(game_state: dict, self) -> np.array:
         current_bomb[0] = b_pos[0] - position[0]
         current_bomb[1] = b_pos[1] - position[1]
         #self.logger.debug(f'Bomb Position: {b_pos} - nearest: {nearest_bomb}')
-        countdown = -2
+        
+        exploding = 3
+        countdown = 1
         if (i[1] == 0):
-            countdown = -1
-        if np.linalg.norm(current_bomb) < 6:
-            self.logger.debug(f'current bomb: {current_bomb} - i[1]: {i[1]}')
+            countdown = exploding
+        if np.linalg.norm(current_bomb) < 5:
+            self.logger.debug(f'current bomb: {current_bomb} - i[1] + 1: {i[1] + 1}')
+            self.logger.debug(f'Bomb Position: {b_pos} - own position: {position}')
             
             #check for bombs: same line (e.g. 3 steps up)
-            if current_bomb[1] == 0:
-                if info[4] != -1:
-                    info[4] = countdown
+            if current_bomb[0] == 0:
+                if info[current] != exploding:
+                    info[current] = countdown
                     self.logger.debug(f'bomb same position')
 
-                if current_bomb[0] < 0 and info[0] != -1:
-                    info[0] = countdown
+                if current_bomb[1] < 0 and info[top] != exploding:
+                    info[top] = countdown
                     self.logger.debug(f'bomb up')
-                if current_bomb[0] > 0 and info[2] != -1:
-                    info[2] = countdown
+                if current_bomb[1] > 0 and info[bottom] != exploding:
+                    info[bottom] = countdown
                     self.logger.debug(f'bomb down')
                 
-            if current_bomb[0] == 0:
-                if info[4] != -1:
-                    info[4] = countdown
+            if current_bomb[1] == 0:
+                if info[current] != exploding:
+                    info[current] = countdown
                     self.logger.debug(f'bomb same position')
                     
-                if current_bomb[1] < 0 and info[3] != -1:
-                    info[3] = countdown
+                if current_bomb[0] < 0 and info[left] != exploding:
+                    info[left] = countdown
                     self.logger.debug(f'bomb left')
-                if current_bomb[1] > 0 and info[1] != -1:
-                    info[1] = countdown
+                if current_bomb[0] > 0 and info[right] != exploding:
+                    info[right] = countdown
                     self.logger.debug(f'bomb right')
             
             #check for bombs: crossing (e.g. one step up, three to the side)
-            if current_bomb[0] == -1:
-                info[0] = countdown
+            if current_bomb[1] == -1 and info[top] != exploding:
+                info[top] = countdown
                 self.logger.debug(f'bomb crossing up')
-            if current_bomb[0] == 1:
-                info[2] = countdown
+            if current_bomb[1] == 1 and info[bottom] != exploding:
+                info[bottom] = countdown
                 self.logger.debug(f'bomb crossing down')
 
-            if current_bomb[1] == -1:
-                info[3] = countdown
+            if current_bomb[0] == -1 and info[left] != exploding:
+                info[left] = countdown
                 self.logger.debug(f'bomb crossing left')
-            if current_bomb[1] == 1:
-                info[1] = countdown
+            if current_bomb[0] == 1 and info[right] != exploding:
+                info[right] = countdown
                 self.logger.debug(f'bomb crossing right')
 
     
     self.logger.debug(f'adjacent : {adjacent}, explosion : {explosion}, info : {info}')
-    return np.append(info, bomb).reshape(1, -1)
+    return info.reshape(1, -1)
     
     #get position of nearest bomb
     nearest_bomb = [20, 20]
