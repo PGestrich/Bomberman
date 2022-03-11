@@ -141,48 +141,48 @@ def state_to_features(game_state: dict, self) -> np.array:
         if (i[1] == 0):
             countdown = exploding
         if np.linalg.norm(current_bomb) < 5:
-            self.logger.debug(f'current bomb: {current_bomb} - i[1] + 1: {i[1] + 1}')
-            self.logger.debug(f'Bomb Position: {b_pos} - own position: {position}')
+            #self.logger.debug(f'current bomb: {current_bomb} - i[1] + 1: {i[1] + 1}')
+            #self.logger.debug(f'Bomb Position: {b_pos} - own position: {position}')
             
             #check for bombs: same line (e.g. 3 steps up)
             if current_bomb[0] == 0:
                 if info[current] != exploding:
                     info[current] = countdown
-                    self.logger.debug(f'bomb same position')
+                    #self.logger.debug(f'bomb same position')
 
                 if current_bomb[1] < 0 and info[top] != exploding:
                     info[top] = countdown
-                    self.logger.debug(f'bomb up')
+                    #self.logger.debug(f'bomb up')
                 if current_bomb[1] > 0 and info[bottom] != exploding:
                     info[bottom] = countdown
-                    self.logger.debug(f'bomb down')
+                    #self.logger.debug(f'bomb down')
                 
             if current_bomb[1] == 0:
                 if info[current] != exploding:
                     info[current] = countdown
-                    self.logger.debug(f'bomb same position')
+                    #self.logger.debug(f'bomb same position')
                     
                 if current_bomb[0] < 0 and info[left] != exploding:
                     info[left] = countdown
-                    self.logger.debug(f'bomb left')
+                    #self.logger.debug(f'bomb left')
                 if current_bomb[0] > 0 and info[right] != exploding:
                     info[right] = countdown
-                    self.logger.debug(f'bomb right')
+                    #self.logger.debug(f'bomb right')
             
             #check for bombs: crossing (e.g. one step up, three to the side)
             if current_bomb[1] == -1 and info[top] != exploding:
                 info[top] = countdown
-                self.logger.debug(f'bomb crossing up')
+                #self.logger.debug(f'bomb crossing up')
             if current_bomb[1] == 1 and info[bottom] != exploding:
                 info[bottom] = countdown
-                self.logger.debug(f'bomb crossing down')
+                #self.logger.debug(f'bomb crossing down')
 
             if current_bomb[0] == -1 and info[left] != exploding:
                 info[left] = countdown
-                self.logger.debug(f'bomb crossing left')
+                #self.logger.debug(f'bomb crossing left')
             if current_bomb[0] == 1 and info[right] != exploding:
                 info[right] = countdown
-                self.logger.debug(f'bomb crossing right')
+                #self.logger.debug(f'bomb crossing right')
 
     
     self.logger.debug(f'adjacent : {adjacent}, explosion : {explosion}, info : {info}')

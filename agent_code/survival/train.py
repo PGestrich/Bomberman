@@ -22,6 +22,7 @@ ACTIONS = ['UP', 'RIGHT', 'DOWN', 'LEFT', 'WAIT', 'BOMB']
 #dead_state = [0]*6
 SUICIDE = "SUICIDE"
 dead_state = np.array([-100, -100, -100, -100, -100]).reshape(1, -1)
+MOVING_EVENTS = np.array(['MOVED_UP','MOVED_RIGHT','MOVED_DOWN','MOVED_LEFT' ])
 
 
 
@@ -81,26 +82,20 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
     self.logger.debug(f"Old Features: {old_features}")
     new_features = state_to_features(new_game_state, self)
     self.logger.debug(f"New Features: {new_features}")
-    
-    #Index: find if state was already present in dataset
-    idx_s = ((self.X == old_features).all(axis=1).nonzero())[0]
-    
 
-
-    #not present
-    if len(idx_s) == 0:
-        self.y = np.vstack((self.y, np.full((1,len(ACTIONS)), 1)))
-        self.X = np.vstack((self.X, old_features))
-        idx_s = [len(self.y)-1]
-    
-    #self.logger.debug(f'idx_s: {idx_s}')    
-    #self.logger.debug(f'update {self.y[idx_s, idx_action]} to {(self.y[idx_s, idx_action] + reward)/2}')    
+    #un-comment if using q_learn and not augment_data
+    #idx_s = ((self.X == old_features).all(axis=1).nonzero())[0]
+    #if len(idx_s) == 0:
+    #    self.y = np.vstack((self.y, np.full((1,len(ACTIONS)), 1)))
+    #    self.X = np.vstack((self.X, old_features))
+    #    idx_s = [len(self.y)-1]
+        
     idx_action = ACTIONS.index(self_action)
     self.transitions.append(Transition(old_features, self_action, new_features,  reward_from_events(self, events)))
-    self.y[idx_s, idx_action] = q_learn(self, old_features, self_action, new_features, events, idx_s)
+    #self.y[idx_s, idx_action] = q_learn(self, old_features, self_action, new_features, events, idx_s)
 
-
-    #self.y[idx_s, idx_action] = (self.y[idx_s, idx_action] + reward)/2
+    self = augment_data(self, old_features, self_action, new_features, events)
+    
     self.model.fit(self.X, np.nan_to_num(self.y))
 
 def end_of_round(self, last_game_state: dict, last_action: str, events: List[str]):
@@ -120,39 +115,33 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
     old_features = state_to_features(last_game_state, self)
     self.transitions.append(Transition(old_features, last_action, None, reward_from_events(self, events)))
 
-    #learn from last step
-    #Index: find if state was already present in dataset
-    idx_s = ((self.X == old_features).all(axis=1).nonzero())[0]
-    #not present
-    if len(idx_s) == 0:
-        self.y = np.vstack((self.y, np.full((1,len(ACTIONS)), 1)))
-        self.X = np.vstack((self.X, old_features))
-        idx_s = [len(self.y)-1]
     
-    #self.logger.debug(f'idx_s: {idx_s}')    
-    #self.logger.debug(f'update {self.y[idx_s, idx_action]} to {(self.y[idx_s, idx_action] + reward)/2}')    
+    #un-comment if using q_learn and not augment_data
+    #idx_s = ((self.X == old_features).all(axis=1).nonzero())[0]
+    #if len(idx_s) == 0:
+    #    self.y = np.vstack((self.y, np.full((1,len(ACTIONS)), 1)))
+    #    self.X = np.vstack((self.X, old_features))
+    #    idx_s = [len(self.y)-1]
+    
     idx_action = ACTIONS.index(last_action)
-    self.y[idx_s, idx_action] = q_learn(self, old_features, last_action, dead_state, events, idx_s)
-    #self.y[idx_s, idx_action] = (self.y[idx_s, idx_action] + reward)/2
+    #self.y[idx_s, idx_action] = q_learn(self, old_features, last_action, dead_state, events, idx_s)
+    self = augment_data(self, old_features, last_action, dead_state, events)
     
     #unlearn suicidal behaviour
     if 'KILLED_SELF' in events:
         print_state = last_game_state['self'][3]
         explosion_map = last_game_state['explosion_map']
         bombs = last_game_state['bombs']
-        #self.logger.debug(f'Position: {print_state}')
-        #self.logger.debug(f'Bombs: {bombs}')
-        #self.logger.debug(f'Explosion map: {explosion_map}')
         
         
         for t in self.transitions:
             self.logger.debug(f'transition: {t.action}')
 
-            #quickly discourage suicidal behaviour (waiting for bomb to explode)
+            #discourage suicidal behaviour (waiting for bomb to explode)
             if t.action in ['WAIT', 'BOMB']:
-                idx_action = ACTIONS.index(t.action)
-                idx_s = ((self.X == t.state).all(axis=1).nonzero())[0]
-                self.y[idx_s, idx_action] = q_learn(self, t.state, t.action, dead_state, ['SUIZIDE'], idx_s)
+                #idx_s = ((self.X == t.state).all(axis=1).nonzero())[0]
+                #self.y[idx_s, idx_action] = q_learn(self, t.state, t.action, dead_state, ['SUIZIDE'], idx_s)
+                self = augment_data(self, t.state, t.action, dead_state, ['SUIZIDE'])
     self.model.fit(self.X, np.nan_to_num(self.y))
 
     # Store the model
@@ -185,7 +174,7 @@ def reward_from_events(self, events: List[str]) -> int:
     for event in events:
         if event in game_rewards:
             reward_sum += game_rewards[event]
-    self.logger.info(f"Awarded {reward_sum} for events {', '.join(events)}")
+    #self.logger.info(f"Awarded {reward_sum} for events {', '.join(events)}")
     return reward_sum
 
 
@@ -200,7 +189,7 @@ def q_learn(self, old_state, self_action: str, new_state, events: List[str], idx
     
     
     idx_action = ACTIONS.index(self_action)
-    self.logger.debug(f'action {self_action}, idx {idx_action}')
+    #self.logger.debug(f'action {self_action}, idx {idx_action}')
 
     reward = reward_from_events(self, events)
     
@@ -220,10 +209,104 @@ def q_learn(self, old_state, self_action: str, new_state, events: List[str], idx
 
     q_new = q_old + ALPHA*(reward + GAMMA*q_max - q_old)
     q_new = np.maximum(q_new, 0)
-    self.logger.debug(f'change {q_old} to  {q_new} with reward {reward}, q_max = {q_max} since new_state= {new_pred}\n')
+    #self.logger.debug(f'change {q_old} to  {q_new} with reward {reward}, q_max = {q_max} since new_state= {new_pred}\n')
 
     return q_new
 
 
-def augment_data(self):
+def augment_data(self, state, action: str, new_state, events: List[str]):
+
     self.logger.debug(f'In augment data')
+
+    #test data
+    #state = np.array([[1,5,7,3, 0]])
+    #new_state = np.array([[2,6,8,4, 0]])
+    
+    adjacent = state[0][0:4]
+    new_adjacent = new_state[0][0:4]
+
+    
+
+    
+    rot_action = ACTIONS.index(action)
+    rotate = [3, 0, 1,2]
+    self.logger.debug(f'adjacent {adjacent}, new_adjacent {new_adjacent}, action {rot_action} / {action}')
+    tested = []
+    #rotate
+    for i in range(4):
+        adjacent = adjacent[rotate]
+        new_adjacent = new_adjacent[rotate]
+        
+        #rotate action if necessary
+        if rot_action in range(4):
+            rot_action = (rot_action + 1) % 4
+            events = update_event(events)
+        #don't double waiting + bomb actions
+        elif np.any([np.array_equal(np.append(adjacent, rot_action), ar) for ar in tested]):
+            continue
+        
+        rot_state = np.append(adjacent, state[0][4])
+        #learn
+        self.logger.debug(f'Rot Features: {rot_state}, Action: {ACTIONS[rot_action]}')
+        self.logger.debug(f'New Features: {np.append(new_adjacent, new_state[0][4])}')
+        tested.append(rot_state)
+
+        idx_s = ((self.X == rot_state).all(axis=1).nonzero())[0]
+        if len(idx_s) == 0:
+            self.y = np.vstack((self.y, np.full((1,len(ACTIONS)), 1)))
+            self.X = np.vstack((self.X, rot_state))
+            idx_s = [len(self.y)-1]
+        
+        self.y[idx_s, rot_action] = q_learn(self, rot_state, ACTIONS[rot_action], np.append(new_adjacent, new_state[0][4]), events, idx_s)
+        
+        self.logger.debug(f' New Probablities: {self.y[idx_s]}')
+        
+        
+    #mirrored states
+    rot_action = ACTIONS.index(action)
+    adjacent = state[0][[2,1,0,3]]
+    new_adjacent = new_state[0][[2,1,0,3]]
+    if rot_action in [0, 2]:
+        rot_action = (rot_action + 2) % 4
+        events = update_event(update_event(events))
+    
+    #return self if state is mirror-symmetric
+    if np.any([np.array_equal(np.append(adjacent, rot_action), ar) for ar in tested]):
+        return self
+        
+    #else process mirrored states too
+    for i in range(4):
+        adjacent = adjacent[rotate]
+        new_adjacent = new_adjacent[rotate]
+        if rot_action in range(4):
+            rot_action = (rot_action + 1) % 4
+            events = update_event(events)
+
+        elif np.any([np.array_equal(np.append(adjacent, rot_action), ar) for ar in tested]):
+            continue 
+
+        rot_state = np.append(adjacent, state[0][4])
+        #self.logger.debug(f'Rot2 Features: {rot_state}, Action: {ACTIONS[rot_action]}')
+        #self.logger.debug(f'New2 Features: {np.append(new_adjacent, new_state[0][4])}')
+        tested.append(rot_state)
+        
+        idx_s = ((self.X == rot_state).all(axis=1).nonzero())[0]
+        if len(idx_s) == 0:
+            self.y = np.vstack((self.y, np.full((1,len(ACTIONS)), 1)))
+            self.X = np.vstack((self.X, rot_state))
+            idx_s = [len(self.y)-1]
+        
+        self.y[idx_s, rot_action] = q_learn(self,rot_state, ACTIONS[rot_action], np.append(new_adjacent, new_state[0][4]), events, idx_s)
+    
+
+    return self
+
+
+def update_event(events):
+    for id in range(len(events)):
+        event = events[id]
+        idx = ((MOVING_EVENTS == event).nonzero())[0]
+        if idx.size > 0 and idx[0] in range(4):
+            events[id] = MOVING_EVENTS[(idx + 1)%4][0]
+        
+    return events
