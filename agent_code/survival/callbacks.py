@@ -1,13 +1,21 @@
+from calendar import c
 import os
 import pickle
 import random
 
+import settings
+
 import numpy as np
 from sklearn.tree import DecisionTreeRegressor
 
+move = -100
 
+#change in both callbacks & train!
 ACTIONS = ['UP', 'RIGHT', 'DOWN', 'LEFT', 'WAIT', 'BOMB']
 dead_state = np.array([-100, -100, -100, -100, -100, -100]).reshape(1, -1)
+new_prob = [100]*6
+
+
 
 def setup(self):
     """
@@ -23,6 +31,7 @@ def setup(self):
 
     :param self: This object is passed to all callbacks and you can set arbitrary values.
     """
+
     if self.train or not os.path.isfile("my-saved-model.pt"):
         self.logger.info("Setting up model from scratch.")
         self.model = DecisionTreeRegressor(random_state=0)
@@ -51,6 +60,7 @@ def act(self, game_state: dict) -> str:
     #self.logger.debug("Querying model for action.")
     features = state_to_features(game_state, self)
     self.logger.debug(f'Adjacent:  {features}')
+
     
     prediction = self.model.predict(features)[0]
     self.logger.debug(f'Prediction:  {prediction}')  
@@ -58,13 +68,21 @@ def act(self, game_state: dict) -> str:
     if np.sum(prediction) == 0:
         if self.train and features[0][0] != -100:
             idx_s = ((self.X == features).all(axis=1).nonzero())[0]
-            self.y[idx_s] = [10, 10, 10, 10, 5, 5]
+            self.y[idx_s] = [1, 1, 1, 1, 1, 1]
         action = np.random.choice(ACTIONS, p=[.2, .2, .2, .2, .1, .1])
         self.logger.debug(f'Action:  {action}\n')
         return action
     
     action = np.random.choice(ACTIONS, p=prediction/np.sum(prediction))
     self.logger.debug(f'Action:  {action}\n')
+
+    if not self.train:
+        idx_action = ACTIONS.index(action)
+        global move
+        if idx_action in range(4):
+            move = idx_action
+        if idx_action == 6:
+            move = 3 - idx_action
     return action
 
 
@@ -84,7 +102,7 @@ def state_to_features(game_state: dict, self) -> np.array:
     """
     # This is the dict before the game begins and after it ends
     if game_state is None:
-        return  np.array([-100, -100, -100, -100, -100, -100]).reshape(1, -1)
+        return  np.array([-100, -100, -100, -100, -100, -100, -100]).reshape(1, -1)
     round = game_state['round']
     step = game_state['step']
     field = game_state['field']
@@ -94,7 +112,12 @@ def state_to_features(game_state: dict, self) -> np.array:
     name, score, bomb, position = game_state['self']
     others = game_state['others']
     user_input = game_state['user_input']
-    self.logger.debug(f'position: {position}')
+    self.logger.debug(f'position: {position}, bombs: {bombs}')
+
+    #meaning of numbers
+    exploding = 3
+    occupied = 2
+    countdown = 1
     
     #top, right, bottom, left, current
     top, top_pos = 0, (position[0] , position[1] - 1)
@@ -102,22 +125,22 @@ def state_to_features(game_state: dict, self) -> np.array:
     bottom, bottom_pos = 2, (position[0] , position[1] + 1)
     left, left_pos = 3, (position[0]  - 1, position[1])
     current = 4
-    adjacent = np.array([2*abs(field[top_pos]),
-                        2*abs(field[right_pos]),
-                        2*abs(field[bottom_pos ]),
-                        2*abs(field[left_pos]),
+    adjacent = np.array([occupied*abs(field[top_pos]),
+                        occupied*abs(field[right_pos]),
+                        occupied*abs(field[bottom_pos ]),
+                        occupied*abs(field[left_pos]),
                         - bomb])
     
     for agent in others:
         agent_pos = agent[3]
         if agent_pos == top_pos:
-            adjacent[top] = 2
+            adjacent[top] = occupied
         if agent_pos == right_pos:
-            adjacent[right] = 2
+            adjacent[right] = occupied
         if agent_pos == bottom_pos:
-            adjacent[bottom] = 2
+            adjacent[bottom] = occupied
         if agent_pos == left_pos:
-            adjacent[left] = 2
+            adjacent[left] = occupied
                         
     #return adjacent.reshape(1, -1)
     explosion = np.array([explosion_map[top_pos ],
@@ -126,7 +149,7 @@ def state_to_features(game_state: dict, self) -> np.array:
                         explosion_map[left_pos],
                         explosion_map[position]
                         ])
-    info = adjacent + 3*explosion
+    info = adjacent + exploding*explosion
     
     
     current_bomb = [0,0]
@@ -134,10 +157,20 @@ def state_to_features(game_state: dict, self) -> np.array:
         b_pos = i[0]
         current_bomb[0] = b_pos[0] - position[0]
         current_bomb[1] = b_pos[1] - position[1]
-        #self.logger.debug(f'Bomb Position: {b_pos} - nearest: {nearest_bomb}')
         
-        exploding = 3
-        countdown = 1
+        #bombs block fields
+        if b_pos == top_pos:
+            info[top] = occupied
+        elif b_pos == right_pos:
+            info[right] = occupied
+        elif b_pos == bottom_pos:
+            info[bottom] = occupied
+        elif b_pos == left_pos:
+            info[left] = occupied
+            
+        
+
+        # update danger of fields
         if (i[1] == 0):
             countdown = exploding
         if np.linalg.norm(current_bomb) < 5:
@@ -147,45 +180,53 @@ def state_to_features(game_state: dict, self) -> np.array:
             #check for bombs: same line (e.g. 3 steps up)
             if current_bomb[0] == 0:
                 if info[current] != exploding:
-                    info[current] = countdown
+                    info[current] = np.maximum(countdown, info[current])
                     #self.logger.debug(f'bomb same position')
 
-                if current_bomb[1] < 0 and info[top] != exploding:
-                    info[top] = countdown
+                if current_bomb[1] <= 0 and info[top] != exploding:
+                    info[top] = np.maximum(countdown, info[top])
                     #self.logger.debug(f'bomb up')
-                if current_bomb[1] > 0 and info[bottom] != exploding:
-                    info[bottom] = countdown
+                if current_bomb[1] >= 0 and info[bottom] != exploding:
+                    info[bottom] = np.maximum(countdown, info[bottom])
                     #self.logger.debug(f'bomb down')
                 
             if current_bomb[1] == 0:
                 if info[current] != exploding:
-                    info[current] = countdown
+                    info[current] = np.maximum(countdown, info[current])
                     #self.logger.debug(f'bomb same position')
                     
-                if current_bomb[0] < 0 and info[left] != exploding:
-                    info[left] = countdown
+                if current_bomb[0] <= 0 and info[left] != exploding:
+                    info[left] = np.maximum(countdown, info[left])
                     #self.logger.debug(f'bomb left')
-                if current_bomb[0] > 0 and info[right] != exploding:
-                    info[right] = countdown
+                if current_bomb[0] >= 0 and info[right] != exploding:
+                    info[right] = np.maximum(countdown, info[right])
                     #self.logger.debug(f'bomb right')
             
             #check for bombs: crossing (e.g. one step up, three to the side)
             if current_bomb[1] == -1 and info[top] != exploding:
-                info[top] = countdown
+                info[top] = np.maximum(countdown, info[top])
                 #self.logger.debug(f'bomb crossing up')
             if current_bomb[1] == 1 and info[bottom] != exploding:
-                info[bottom] = countdown
+                info[bottom] = np.maximum(countdown, info[bottom])
                 #self.logger.debug(f'bomb crossing down')
 
             if current_bomb[0] == -1 and info[left] != exploding:
-                info[left] = countdown
+                info[left] = np.maximum(countdown, info[left])
                 #self.logger.debug(f'bomb crossing left')
             if current_bomb[0] == 1 and info[right] != exploding:
-                info[right] = countdown
+                info[right] = np.maximum(countdown, info[right])
                 #self.logger.debug(f'bomb crossing right')
+                
+    movement = 0
+    if self.train:
+        movement = settings.move
+    else:
+        global move
+        movement = move
+    self.logger.debug(f'adjacent : {adjacent}, explosion : {explosion}')
+    self.logger.debug(f'info : {info}, move: {movement}')
+    info = np.append(info, movement)
 
-    
-    self.logger.debug(f'adjacent : {adjacent}, explosion : {explosion}, info : {info}')
     return info.reshape(1, -1)
     
     #get position of nearest bomb
