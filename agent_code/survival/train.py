@@ -22,6 +22,8 @@ RECORD_ENEMY_TRANSITIONS = 1.0  # record enemy transitions with probability ...
 MOVING_EVENTS = np.array(['MOVED_UP','MOVED_RIGHT','MOVED_DOWN','MOVED_LEFT' ])
 SUICIDE = "SUICIDE"
 BACKWARDS = "BACKWARDS"
+INTO_DANGER = "INTO_DANGER"
+OUT_OF_DANGER = "OUT_OF_DANGER"
 
 
 #change in both callbacks & train!
@@ -97,10 +99,22 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
     #    self.y = np.vstack((self.y, np.full((1,len(ACTIONS)), 1)))
     #    self.X = np.vstack((self.X, old_features))
     #    idx_s = [len(self.y)-1]
+
+    if old_features[0][4] < new_features[0][4]:
+        events.append(OUT_OF_DANGER)
+    if old_features[0][4] > new_features[0][4]:
+        events.append(INTO_DANGER)
+
+
     idx_action = ACTIONS.index(self_action)
     if idx_action in range(4) : 
         if abs(old_features[0][5] - idx_action) == 2:
             events.append(BACKWARDS)
+    
+    #dropping bombs before moving is considered bad form,
+    #but after first move game_state remains none, therefore manual correction:
+    if idx_action == 5 and old_features[0][5] == -100:
+        events.append('KILLED_SELF')
     
     self.transitions.append(Transition(old_features, self_action, new_features,  reward_from_events(self, events)))
     #self.y[idx_s, idx_action] = q_learn(self, old_features, self_action, new_features, events, idx_s)
@@ -156,10 +170,14 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
 
             #discourage suicidal behaviour (waiting for bomb to explode)
             #if t.action in ['WAIT', 'BOMB']:
-            if t.action == 'WAIT':
+            if t.action == 'BOMB':
                 #idx_s = ((self.X == t.state).all(axis=1).nonzero())[0]
                 #self.y[idx_s, idx_action] = q_learn(self, t.state, t.action, dead_state, ['SUIZIDE'], idx_s)
                 self.y = augment_data(self, t.state, t.action, dead_state, ['SUIZIDE'])
+            if t.action == 'WAIT':
+                #idx_s = ((self.X == t.state).all(axis=1).nonzero())[0]
+                #self.y[idx_s, idx_action] = q_learn(self, t.state, t.action, dead_state, ['SUIZIDE'], idx_s)
+                self.y = augment_data(self, t.state, t.action, dead_state, ['KILLED_SELF'])
     self.model.fit(self.X, np.nan_to_num(self.y))
 
     # Store the model
@@ -186,6 +204,8 @@ def reward_from_events(self, events: List[str]) -> int:
         e.GOT_KILLED: -100,
         e.KILLED_SELF: -100,
         #e.BOMB_EXPLODED: 100,
+        INTO_DANGER: -15,
+        OUT_OF_DANGER: 15,
         BACKWARDS: -15,
         SUICIDE: 0  # idea: the custom event is bad
     }
@@ -219,7 +239,7 @@ def q_learn(self, old_state, self_action: str, new_state, events: List[str], idx
     idx_new =  ((self.X == new_state).all(axis=1).nonzero())[0]
     #not present
     if len(idx_new) == 0:
-        self.y = np.vstack((self.y, np.full((1,len(ACTIONS)), 1)))
+        self.y = np.vstack((self.y, new_prob))
         self.X = np.vstack((self.X, new_state))
         idx_new = [len(self.y)-1]
     
@@ -346,7 +366,7 @@ def augment_data(self, state, action: str, new_state, events: List[str]):
         
         idx_s = ((self.X == rot_state).all(axis=1).nonzero())[0]
         if len(idx_s) == 0:
-            self.y = np.vstack((self.y, np.full((1,len(ACTIONS)), 1)))
+            self.y = np.vstack((self.y, new_prob))
             self.X = np.vstack((self.X, rot_state))
             idx_s = [len(self.y)-1]
         

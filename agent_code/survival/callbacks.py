@@ -66,9 +66,6 @@ def act(self, game_state: dict) -> str:
     self.logger.debug(f'Prediction:  {prediction}')  
 
     if np.sum(prediction) == 0:
-        if self.train and features[0][0] != -100:
-            idx_s = ((self.X == features).all(axis=1).nonzero())[0]
-            self.y[idx_s] = [1, 1, 1, 1, 1, 1]
         action = np.random.choice(ACTIONS, p=[.2, .2, .2, .2, .1, .1])
         self.logger.debug(f'Action:  {action}\n')
         return action
@@ -173,13 +170,13 @@ def state_to_features(game_state: dict, self) -> np.array:
         # update danger of fields
         if (i[1] == 0):
             countdown = exploding
-        if np.linalg.norm(current_bomb) < 5:
+        if np.linalg.norm(current_bomb) <= settings.BOMB_POWER:
             #self.logger.debug(f'current bomb: {current_bomb} - i[1] + 1: {i[1] + 1}')
             #self.logger.debug(f'Bomb Position: {b_pos} - own position: {position}')
             
             #check for bombs: same line (e.g. 3 steps up)
             if current_bomb[0] == 0:
-                if info[current] != exploding:
+                if info[current] != exploding and np.linalg.norm(current_bomb) < settings.BOMB_POWER:
                     info[current] = np.maximum(countdown, info[current])
                     #self.logger.debug(f'bomb same position')
 
@@ -191,7 +188,7 @@ def state_to_features(game_state: dict, self) -> np.array:
                     #self.logger.debug(f'bomb down')
                 
             if current_bomb[1] == 0:
-                if info[current] != exploding:
+                if info[current] != exploding and np.linalg.norm(current_bomb) < settings.BOMB_POWER:
                     info[current] = np.maximum(countdown, info[current])
                     #self.logger.debug(f'bomb same position')
                     
