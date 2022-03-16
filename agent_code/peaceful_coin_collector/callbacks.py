@@ -203,11 +203,21 @@ def state_to_features(game_state: dict, self) -> np.array:
     """
 
     self.logger.debug(f'adjacent : {adjacent}, explosion : {explosion}, info : {info}')
+    collect = search_coin(self, game_state)
+    if collect == top_pos and info[top] == 0:
+        info[top] = -1
+    if collect == right_pos and info[right] == 0:
+        info[right] = -1
+    if collect == bottom_pos and info[bottom] == 0:
+        info[bottom] = -1
+    if collect == left_pos and info[left] == 0:
+        info[left] = -1
+
     return info.reshape(1, -1)
 
 
 
-def search_coin(game_state):
+def search_coin(self, game_state):
     """A function that finds the shortest path to the next coin (alternatively crate) and returns the next step to the coin"""
     # to be deleted later:
     # field: all the information about the field(-1: stone walls, 0: free tiles, 1: crates)
@@ -215,7 +225,7 @@ def search_coin(game_state):
     # position: where the agent is
     # adjacent: describes in which direction from the position you can go e.g. top, bottom, right, left - [0, 0, -1, 0] # you can't go to the right
 
-    graph = get_free_neighbors(game_state) # a dict  {(1, 1): [(1, 0), (2, 1), (0, 1)], ...}
+    #graph = get_free_neighbors(game_state) # a dict  {(1, 1): [(1, 0), (2, 1), (0, 1)], ...}
     field = game_state['field']
     coins = game_state['coins']
     name, score, bomb, position = game_state['self']
@@ -224,11 +234,12 @@ def search_coin(game_state):
     shortest_path = inf
 
     for coin in coins:
-        path, path_length = BFS_SP(graph, position, coin) # find shortest path to coin # e.g. ([(0, 1), (1, 1), (2, 1)], 2)
-        
+        path, path_length = BFS_SP(field, position, coin) # find shortest path to coin # e.g. ([(0, 1), (1, 1), (2, 1)], 2)
+        self.logger.debug(f'shortest path: {path}')
         if path_length < shortest_path:
             shortest_path = path_length
-            move = path[0] # ? TODO
+            move = path[1] # remember first step to coin
+    
     return move
 
 """
@@ -266,9 +277,12 @@ def get_free_neighbors(game_state):
     return graph # {(1, 1): [(1, 0), (2, 1), (0, 1)], ...}
 
 
-def BFS_SP(graph, start, goal):
+def BFS_SP(field, start, goal):
     """from https://www.geeksforgeeks.org/building-an-undirected-graph-and-finding-shortest-path-using-dictionaries-in-python/"""
-    explored = []
+    
+    
+    x_occupied, y_occupied = np.where(field != 0)
+    explored = [(x_occupied[i], y_occupied[i]) for i in range(len(x_occupied))]
      
     # Queue for traversing the
     # graph in the BFS
@@ -278,7 +292,7 @@ def BFS_SP(graph, start, goal):
     # reached
     if start == goal:
         print("Same Node")
-        return 0
+        return None, 0
      
     # Loop to traverse the graph
     # with the help of the queue
@@ -288,24 +302,33 @@ def BFS_SP(graph, start, goal):
          
         # Condition to check if the
         # current node is not visited
-        if node not in explored:
-            neighbours = graph[node]
-             
-            # Loop to iterate over the
-            # neighbours of the node
-            for neighbour in neighbours:
-                new_path = list(path)
-                new_path.append(neighbour)
-                queue.append(new_path)
-                 
-                # Condition to check if the
-                # neighbour node is the goal
-                if neighbour == goal:
-                    #print("Shortest path = ", *new_path)
-                    return [*new_path], len(new_path)-1 # return shortest path and the length
+        
+        top =(node[0] , node[1] - 1)
+        right= (node[0] + 1, node[1])
+        bottom= (node[0] , node[1] + 1)
+        left = (node[0]  - 1, node[1])
+        
+        neighbours = [top, right, bottom, left]
+            
+        # Loop to iterate over the
+        # neighbours of the node
+        for neighbour in neighbours:
+            if neighbour == goal:
+                #print("Shortest path = ", *new_path)
+                return [*new_path], len(new_path)-1
+                
+            if neighbour in explored:
+                continue
+            new_path = list(path)
+            new_path.append(neighbour)
+            queue.append(new_path)
+                
+            # Condition to check if the
+            # neighbour node is the goal
+             # return shortest path and the length
             explored.append(node)
  
     # Condition when the nodes
     # are not connected
     #print("connecting path doesn't exist")
-    #return
+    return None, inf

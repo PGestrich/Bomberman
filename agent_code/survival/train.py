@@ -28,7 +28,7 @@ OUT_OF_DANGER = "OUT_OF_DANGER"
 
 #change in both callbacks & train!
 dead_state = np.array([-100, -100, -100, -100, -100, -100]).reshape(1, -1)
-new_prob = [100]*6
+new_prob = [10]*6
 ACTIONS = ['UP', 'RIGHT', 'DOWN', 'LEFT', 'WAIT', 'BOMB']
 
 
@@ -88,9 +88,10 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
     # Idea: Add your own events to hand out rewards
     
     # state_to_features is defined in callbacks.py
-    old_features = state_to_features(old_game_state, self)
+    self.logger.debug(f"In game_events_occured")
+    old_features = state_to_features(old_game_state, self, False)
     self.logger.debug(f"Old Features: {old_features}")
-    new_features = state_to_features(new_game_state, self)
+    new_features = state_to_features(new_game_state, self, False)
     self.logger.debug(f"New Features: {new_features}")
 
     #un-comment if using q_learn and not augment_data
@@ -143,7 +144,8 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
     :param self: The same object that is passed to all of your callbacks.
     """
     self.logger.debug(f'Encountered event(s) {", ".join(map(repr, events))} in final step')
-    old_features = state_to_features(last_game_state, self)
+    self.logger.debug(f"In end_of_round")
+    old_features = state_to_features(last_game_state, self, False)
     self.transitions.append(Transition(old_features, last_action, None, reward_from_events(self, events)))
 
     

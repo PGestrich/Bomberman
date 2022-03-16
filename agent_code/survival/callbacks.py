@@ -13,7 +13,7 @@ move = -100
 #change in both callbacks & train!
 ACTIONS = ['UP', 'RIGHT', 'DOWN', 'LEFT', 'WAIT', 'BOMB']
 dead_state = np.array([-100, -100, -100, -100, -100, -100]).reshape(1, -1)
-new_prob = [100]*6
+new_prob = [10]*6
 
 
 
@@ -58,7 +58,8 @@ def act(self, game_state: dict) -> str:
         return np.random.choice(ACTIONS, p=[.2, .2, .2, .2, .1, .1])
 
     #self.logger.debug("Querying model for action.")
-    features = state_to_features(game_state, self)
+    self.logger.debug(f"In act")
+    features = state_to_features(game_state, self, True)
     self.logger.debug(f'Adjacent:  {features}')
 
     
@@ -83,7 +84,7 @@ def act(self, game_state: dict) -> str:
     return action
 
 
-def state_to_features(game_state: dict, self) -> np.array:
+def state_to_features(game_state: dict, self, log:bool) -> np.array:
     """
     *This is not a required function, but an idea to structure your code.*
 
@@ -109,7 +110,16 @@ def state_to_features(game_state: dict, self) -> np.array:
     name, score, bomb, position = game_state['self']
     others = game_state['others']
     user_input = game_state['user_input']
-    self.logger.debug(f'position: {position}, bombs: {bombs}')
+    if log:
+        self.logger.debug(f'position: {position}, bombs: {bombs}, step {step}')
+
+    #reset movement counter for new game
+    if step == 1:
+        if self.train:
+            settings.move = -100
+        else:
+            global move
+            move = -100
 
     #meaning of numbers
     exploding = 3
@@ -151,6 +161,8 @@ def state_to_features(game_state: dict, self) -> np.array:
     
     current_bomb = [0,0]
     for i in list(bombs):
+        countdown = 1
+
         b_pos = i[0]
         current_bomb[0] = b_pos[0] - position[0]
         current_bomb[1] = b_pos[1] - position[1]
@@ -170,13 +182,13 @@ def state_to_features(game_state: dict, self) -> np.array:
         # update danger of fields
         if (i[1] == 0):
             countdown = exploding
-        if np.linalg.norm(current_bomb) <= settings.BOMB_POWER:
+        if np.linalg.norm(current_bomb) <= settings.BOMB_TIMER:
             #self.logger.debug(f'current bomb: {current_bomb} - i[1] + 1: {i[1] + 1}')
             #self.logger.debug(f'Bomb Position: {b_pos} - own position: {position}')
             
             #check for bombs: same line (e.g. 3 steps up)
             if current_bomb[0] == 0:
-                if info[current] != exploding and np.linalg.norm(current_bomb) < settings.BOMB_POWER:
+                if info[current] != exploding and np.linalg.norm(current_bomb) < settings.BOMB_TIMER:
                     info[current] = np.maximum(countdown, info[current])
                     #self.logger.debug(f'bomb same position')
 
@@ -188,7 +200,7 @@ def state_to_features(game_state: dict, self) -> np.array:
                     #self.logger.debug(f'bomb down')
                 
             if current_bomb[1] == 0:
-                if info[current] != exploding and np.linalg.norm(current_bomb) < settings.BOMB_POWER:
+                if info[current] != exploding and np.linalg.norm(current_bomb) < settings.BOMB_TIMER:
                     info[current] = np.maximum(countdown, info[current])
                     #self.logger.debug(f'bomb same position')
                     
@@ -218,10 +230,10 @@ def state_to_features(game_state: dict, self) -> np.array:
     if self.train:
         movement = settings.move
     else:
-        global move
         movement = move
-    self.logger.debug(f'adjacent : {adjacent}, explosion : {explosion}')
-    self.logger.debug(f'info : {info}, move: {movement}')
+    if log:
+        self.logger.debug(f'adjacent : {adjacent}, explosion : {explosion}')
+        self.logger.debug(f' info : {info}, move: {movement}')
     info = np.append(info, movement)
 
     return info.reshape(1, -1)
