@@ -165,7 +165,8 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
     old_features = state_to_features(last_game_state, self, False)
     self.transitions.append(Transition(old_features, last_action, None, reward_from_events(self, events)))
 
-    if old_features[0][4] == 3: #run into exploding fields is bad
+    idx_action = ACTIONS.index(last_action)
+    if old_features[0][idx_action] in [2,3]: #run into exploding fields is bad
         events.append(INTO_DANGER)
     
     #un-comment if using q_learn and not augment_data
