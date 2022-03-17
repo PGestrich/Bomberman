@@ -182,7 +182,7 @@ def state_to_features(game_state: dict, self, log:bool) -> np.array:
     movement = 0
 
     #encourage escaping into right direction 
-    if info[4] == 1:
+    if info[4] in [1,3]:
         self.logger.debug(f' find escape route')
         escape = BFS_escape(field, position, bombs, self)
         self.logger.debug(f'escape : {escape}')
