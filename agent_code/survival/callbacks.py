@@ -241,7 +241,7 @@ def secure(position, bombs, field, self):
             
 
         #check if bomb close enough
-        if not np.linalg.norm(current_bomb) <= settings.BOMB_TIMER:
+        if not np.linalg.norm(current_bomb) < settings.BOMB_TIMER:
             continue
         
         #if direct line and not stopped by wall
@@ -263,7 +263,7 @@ def secure(position, bombs, field, self):
         if current_bomb[1] == 0 and not blocked:
             res  = np.maximum(res, countdown)
 
-    self.logger.debug(f' test secure : {position}, result: {res}')
+    #self.logger.debug(f' test secure : {position}, result: {res}')
     return res
         
 
@@ -273,10 +273,20 @@ def BFS_escape(field, position, bombs, self):
     self.logger.debug(f' in BFS_escape ')
     x_occupied, y_occupied = np.where(field != 0)
     explored = [(x_occupied[i], y_occupied[i]) for i in range(len(x_occupied))]
+
+    #bombs are 'permanent' blocks too
+    for bomb in bombs:
+        b_pos = bomb[0]
+        explored.append(b_pos)
      
     # Queue for traversing the
     # graph in the BFS
     queue = [[position]]
+
+    o_top =(position[0] , position[1] - 1)
+    o_right= (position[0] + 1, position[1])
+    o_bottom= (position[0] , position[1] + 1)
+    o_left = (position[0]  - 1, position[1])
      
     # If the desired node is
     # reached
@@ -304,21 +314,30 @@ def BFS_escape(field, position, bombs, self):
         left = (node[0]  - 1, node[1])
         
         neighbours = [top, right, bottom, left]
-            
+
+        # account for timer of bombs
+        bombs_timed =[]
+        for bomb in bombs:
+            if bomb[1]  - (len(path) - 1) > 0:
+                bombs_timed.append((bomb[0], bomb[1]  - (len(path) - 1)))
+
+        self.logger.debug(f'path: {path}, news bombs: {bombs_timed} ')   
         # Loop to iterate over the
         # neighbours of the node
         for neighbour in neighbours:
             if neighbour in explored:
                 continue
+            
+            
 
-            if secure(neighbour, bombs, field, self) == 0:
+            if secure(neighbour, bombs_timed, field, self) == 0:
                 path.append(neighbour)
                 self.logger.debug(f' shortest path: {path} ')
-                if path[1] == top:
+                if path[1] == o_top:
                     return 0
-                elif path[1] == right:
+                elif path[1] == o_right:
                     return 1
-                elif path[1] == bottom:
+                elif path[1] == o_bottom:
                     return 2
                 else:
                     return 3
@@ -326,8 +345,9 @@ def BFS_escape(field, position, bombs, self):
             
 
             
-            path.append(neighbour)
-            queue.append(path)
+            new_path = path.copy()    
+            new_path.append(neighbour)
+            queue.append(new_path)
                 
             # Condition to check if the
             # neighbour node is the goal

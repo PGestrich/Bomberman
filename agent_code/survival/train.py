@@ -102,16 +102,16 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
     idx_action = ACTIONS.index(self_action)
 
     #escaping danger
-    if old_features[0][4] > new_features[0][4]:
+    if idx_action != 5 and old_features[0][idx_action] == 0:
         events.append(OUT_OF_DANGER)
-    if old_features[0][4] < new_features[0][4]:
+    if idx_action != 5 and old_features[0][idx_action] > 0:
         events.append(INTO_DANGER)
-    if new_features[0][4] == 3: #run into exploding fields is bad
-        events.append(SUICIDE)
-    if new_features[0][4] == 0: #moving to safe places is good
-        events.append(SWEET_SPOT)
+    #if new_features[0][4] == 3: #run into exploding fields is bad
+    #    events.append(SUICIDE)
+    #if new_features[0][4] == 0: #moving to safe places is good
+    #    events.append(SWEET_SPOT)
     #waiting on a dangerous field is bad
-    if idx_action == 4 and old_features[0][4] == 1:
+    if idx_action in [4,5] and old_features[0][4] == 1:
         events.append(SUICIDE)
 
 
@@ -216,9 +216,9 @@ def reward_from_events(self, events: List[str]) -> int:
     game_rewards = {
         e.INVALID_ACTION: -1000,
         #e.BOMB_EXPLODED: 100,
-        e.BOMB_DROPPED: 30,
+        e.BOMB_DROPPED: 20,
         #e.KILLED_SELF: -20,
-        INTO_DANGER: -20,
+        INTO_DANGER: -50,
         OUT_OF_DANGER: 20,
         BACKWARDS: -10,
         FORWARDS: 10, 
