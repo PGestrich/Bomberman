@@ -22,11 +22,9 @@ RECORD_ENEMY_TRANSITIONS = 1.0  # record enemy transitions with probability ...
 MOVING_EVENTS = np.array(['MOVED_UP','MOVED_RIGHT','MOVED_DOWN','MOVED_LEFT' ])
 SUICIDE = "SUICIDE"
 BACKWARDS = "BACKWARDS"
-FORWARDS = "FORWARDS"
 INTO_DANGER = "INTO_DANGER"
 OUT_OF_DANGER = "OUT_OF_DANGER"
 SURVIVED = "SURVIVED"
-SWEET_SPOT = "SWEET_SPOT"
 
 
 #change in both callbacks & train!
@@ -97,46 +95,39 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
     new_features = state_to_features(new_game_state, self, False)
     self.logger.debug(f"New Features: {new_features}")
 
-    
-    # add events
-    idx_action = ACTIONS.index(self_action)
+    #un-comment if using q_learn and not augment_data
+    #idx_s = ((self.X == old_features).all(axis=1).nonzero())[0]
+    #if len(idx_s) == 0:
+    #    self.y = np.vstack((self.y, np.full((1,len(ACTIONS)), 1)))
+    #    self.X = np.vstack((self.X, old_features))
+    #    idx_s = [len(self.y)-1]
 
-    #escaping danger
-    if old_features[0][4] > new_features[0][4]:
-        events.append(OUT_OF_DANGER)
     if old_features[0][4] < new_features[0][4]:
+        events.append(OUT_OF_DANGER)
+    if old_features[0][4] > new_features[0][4]:
         events.append(INTO_DANGER)
-    if new_features[0][4] == 3: #run into exploding fields is bad
-        events.append(SUICIDE)
-    if new_features[0][4] == 0: #moving to safe places is good
-        events.append(SWEET_SPOT)
-    #waiting on a dangerous field is bad
-    if idx_action == 4 and old_features[0][4] == 1:
-        events.append(SUICIDE)
 
 
-    
-    #move
+    idx_action = ACTIONS.index(self_action)
     if idx_action in range(4) : 
         if abs(old_features[0][5] - idx_action) == 2:
             events.append(BACKWARDS)
-        else:
-            events.append(FORWARDS)
     
-    #don't drop bombs if not allowed
-    if idx_action == 5 and old_features[0][4] != -1:
-        events.append(e.INVALID_ACTION)
+    #dropping bombs before moving is considered bad form,
+    #but after first move game_state remains none, therefore manual correction:
+    if idx_action == 5 and old_features[0][5] == -100:
+        events.append('KILLED_SELF')
     
     self.transitions.append(Transition(old_features, self_action, new_features,  reward_from_events(self, events)))
     #self.y[idx_s, idx_action] = q_learn(self, old_features, self_action, new_features, events, idx_s)
 
     self.y = augment_data(self, old_features, self_action, new_features, events)
-    self.logger.debug(f'Encountered game event(s) {events} in step {new_game_state["step"]}\n')
+    self.logger.debug(f'Encountered game event(s) {events} in step {new_game_state["step"]}')
 
-    # if 'BOMB_EXPLODED' in events:        
-    #     for t in self.transitions:
-    #         self.logger.debug(f'transition: {t.action}')
-    #         self.y = augment_data(self, t.state, t.action, t.next_state, ['SURVIVED'])
+    if 'BOMB_EXPLODED' in events:        
+        for t in self.transitions:
+            self.logger.debug(f'transition: {t.action}')
+            self.y = augment_data(self, t.state, t.action, t.next_state, ['SURVIVED'])
                 
     
     #update last action
@@ -165,8 +156,6 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
     old_features = state_to_features(last_game_state, self, False)
     self.transitions.append(Transition(old_features, last_action, None, reward_from_events(self, events)))
 
-    if old_features[0][4] == 3: #run into exploding fields is bad
-        events.append(INTO_DANGER)
     
     #un-comment if using q_learn and not augment_data
     #idx_s = ((self.X == old_features).all(axis=1).nonzero())[0]
@@ -180,7 +169,7 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
     self.y = augment_data(self, old_features, last_action, dead_state, events)
     
     #unlearn suicidal behaviour
-    """ if 'KILLED_SELF' in events:
+    if 'KILLED_SELF' in events:
         print_state = last_game_state['self'][3]
         explosion_map = last_game_state['explosion_map']
         bombs = last_game_state['bombs']
@@ -197,7 +186,7 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
             else:
                 #idx_s = ((self.X == t.state).all(axis=1).nonzero())[0]
                 #self.y[idx_s, idx_action] = q_learn(self, t.state, t.action, dead_state, ['SUIZIDE'], idx_s)
-                self.y = augment_data(self, t.state, t.action, dead_state, ['SUIZIDE']) """
+                self.y = augment_data(self, t.state, t.action, dead_state, ['SUIZIDE'])
     self.model.fit(self.X, np.nan_to_num(self.y))
 
     # Store the model
@@ -215,15 +204,20 @@ def reward_from_events(self, events: List[str]) -> int:
     """
     game_rewards = {
         e.INVALID_ACTION: -1000,
+        e.WAITED: 0,
+        e.MOVED_UP: 10,
+        e.MOVED_DOWN: 10,
+        e.MOVED_RIGHT: 10,
+        e.MOVED_LEFT: 10,
+        e.BOMB_DROPPED: 50,
+        e.GOT_KILLED: -100,
+        e.KILLED_SELF: -100,
         #e.BOMB_EXPLODED: 100,
-        e.BOMB_DROPPED: 30,
-        #e.KILLED_SELF: -20,
-        INTO_DANGER: -20,
-        OUT_OF_DANGER: 20,
-        BACKWARDS: -10,
-        FORWARDS: 10, 
-        SUICIDE : -100,
-        SWEET_SPOT: 10 # idea: the custom event is bad
+        INTO_DANGER: 0,
+        OUT_OF_DANGER: 0,
+        BACKWARDS: 0,
+        SURVIVED: 0,
+        SUICIDE: 0  # idea: the custom event is bad
     }
     reward_sum = 0
     for event in events:
@@ -283,7 +277,7 @@ def augment_data(self, state, action: str, new_state, events: List[str]):
     
     adjacent = state[0][0:4]
     new_adjacent = new_state[0][0:4]
-    movement = state[0][5]
+    movement = settings.move
 
     
 

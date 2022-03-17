@@ -2,7 +2,6 @@ from calendar import c
 import os
 import pickle
 import random
-from cmath import inf
 
 import settings
 
@@ -38,8 +37,6 @@ def setup(self):
         self.model = DecisionTreeRegressor(random_state=0)
     else:
         self.logger.info("Loading model from saved state.")
-        global move
-        move = -100
         with open("my-saved-model.pt", "rb") as file:
             self.model = pickle.load(file)
 
@@ -166,175 +163,129 @@ def state_to_features(game_state: dict, self, log:bool) -> np.array:
     info = adjacent + exploding*explosion
     
     
-    #check neighboring fields for bombs
-    info[top] = np.maximum(info[top], secure(top_pos, bombs, field, self))
-    info[right] = np.maximum(info[right], secure(right_pos, bombs, field, self))
-    info[bottom] = np.maximum(info[bottom], secure(bottom_pos, bombs, field, self))
-    info[left] = np.maximum(info[left], secure(left_pos, bombs, field, self))
+    current_bomb = [0,0]
+    for i in list(bombs):
+        countdown = 1
 
-    test_current = secure(position, bombs, field, self)
-    if test_current == 2:
-        info[current] = 1
-    elif test_current != 0:
-        info[current] = np.maximum(info[current], test_current)
-    
+        b_pos = i[0]
+        current_bomb[0] = b_pos[0] - position[0]
+        current_bomb[1] = b_pos[1] - position[1]
+        
+        #bombs block fields
+        if b_pos == top_pos:
+            info[top] = occupied
+        elif b_pos == right_pos:
+            info[right] = occupied
+        elif b_pos == bottom_pos:
+            info[bottom] = occupied
+        elif b_pos == left_pos:
+            info[left] = occupied
+            
+        
+
+        # update danger of fields
+        if (i[1] == 0):
+            countdown = exploding
+        if np.linalg.norm(current_bomb) <= settings.BOMB_TIMER:
+            #self.logger.debug(f'current bomb: {current_bomb} - i[1] + 1: {i[1] + 1}')
+            #self.logger.debug(f'Bomb Position: {b_pos} - own position: {position}')
+            
+            #check for bombs: same line (e.g. 3 steps up)
+            if current_bomb[0] == 0:
+                if info[current] != exploding and np.linalg.norm(current_bomb) < settings.BOMB_TIMER:
+                    info[current] = np.maximum(countdown, info[current])
+                    #self.logger.debug(f'bomb same position')
+
+                if current_bomb[1] <= settings.BOMB_TIMER - 2 and info[top] != exploding:
+                    info[top] = np.maximum(countdown, info[top])
+                    #self.logger.debug(f'bomb up')
+                if current_bomb[1] >=  - settings.BOMB_TIMER + 2 and info[bottom] != exploding:
+                    info[bottom] = np.maximum(countdown, info[bottom])
+                    #self.logger.debug(f'bomb down')
+                
+            if current_bomb[1] == 0:
+                if info[current] != exploding and np.linalg.norm(current_bomb) < settings.BOMB_TIMER:
+                    info[current] = np.maximum(countdown, info[current])
+                    #self.logger.debug(f'bomb same position')
+                    
+                if current_bomb[0] <= settings.BOMB_TIMER - 2 and info[left] != exploding:
+                    info[left] = np.maximum(countdown, info[left])
+                    #self.logger.debug(f'bomb left')
+                if current_bomb[0] >= - settings.BOMB_TIMER + 2 and info[right] != exploding:
+                    info[right] = np.maximum(countdown, info[right])
+                    #self.logger.debug(f'bomb right')
+            
+            #check for bombs: crossing (e.g. one step up, three to the side)
+            if current_bomb[1] == -1 and info[top] != exploding:
+                info[top] = np.maximum(countdown, info[top])
+                #self.logger.debug(f'bomb crossing up')
+            if current_bomb[1] == 1 and info[bottom] != exploding:
+                info[bottom] = np.maximum(countdown, info[bottom])
+                #self.logger.debug(f'bomb crossing down')
+
+            if current_bomb[0] == -1 and info[left] != exploding:
+                info[left] = np.maximum(countdown, info[left])
+                #self.logger.debug(f'bomb crossing left')
+            if current_bomb[0] == 1 and info[right] != exploding:
+                info[right] = np.maximum(countdown, info[right])
+                #self.logger.debug(f'bomb crossing right')
                 
     movement = 0
 
-    #encourage escaping into right direction 
-    if info[4] == 1:
-        self.logger.debug(f' find escape route')
-        escape = BFS_escape(field, position, bombs, self)
-        self.logger.debug(f'escape : {escape}')
-        if escape is not None and info[escape] == 1:
-            info[escape] = 0
-
-
-    # discourage bomb dropping if no escape rout:
-    if info[current] == -1:
-        self.logger.debug(f'Test escape')
-        bombs.append((position, 3))
-        test_escape = BFS_escape(field, position, bombs, self)
-        self.logger.debug(f'escape direction : {test_escape}')
-            
-        if test_escape is None:
-            info[current] = 0
-    
-    if self.train:
+    # discourage bomb dropping in edges:
+    if position in [(1,1), (1,15), (15, 1), (15,15)]:
+        movement = -100
+    elif self.train:
         movement = settings.move
     else:
         movement = move
-    
     if log:
         self.logger.debug(f'adjacent : {adjacent}, explosion : {explosion}')
         self.logger.debug(f' info : {info}, move: {movement}')
     info = np.append(info, movement)
 
     return info.reshape(1, -1)
-
-def secure(position, bombs, field, self):
     
-    exploding = 3
-    occupied = 2
-    countdown = 1
-
-    res = occupied * abs(field[position])
-
-
-
-    current_bomb = [0,0]
-    for i in bombs:
-        countdown = 1
-        blocked = False
-
+    #get position of nearest bomb
+    nearest_bomb = [20, 20]
+    boom = -1
+    #self.logger.debug(f'Position : {position}')
+    for i in list(bombs):
         b_pos = i[0]
-        current_bomb[0] = b_pos[0] - position[0]
-        current_bomb[1] = b_pos[1] - position[1]
-        
-        if (i[1] == 0):
-            countdown = exploding
+        #self.logger.debug(f'Bomb Position: {b_pos} - nearest: {nearest_bomb}')
+        if np.linalg.norm(np.subtract(b_pos, position)) < np.linalg.norm(nearest_bomb):
+            nearest_bomb[0] = b_pos[0] - position[0]
+            nearest_bomb[1] = b_pos[1] - position[1]
+            #self.logger.debug(f'closer!')
+            boom = i[1]
+    #check explosion map:
+    if explosion_map[position[0], position[1] - 1] > 0:
+        #self.logger.debug(f'1 boom!')
+        nearest_bomb = [0, -1]
+        boom = 0
+    if explosion_map[position[0] + 1, position[1]] > 0:
+        #self.logger.debug(f'2 boom!')
+        nearest_bomb = [1, 0]
+        boom = 0
+    if explosion_map[position[0], position[1] + 1] > 0:
+        #self.logger.debug(f'3 boom!')
+        nearest_bomb = [0, 1]
+        boom = 0
+    if explosion_map[position[0] - 1, position[1] ] > 0:
+        #self.logger.debug(f'4 boom!')
+        nearest_bomb = [-1, 0]
+        boom = 0
 
-
-        #bombs block field
-        if b_pos == position:
-            res =  np.maximum(occupied, res)
-            
-
-        #check if bomb close enough
-        if not np.linalg.norm(current_bomb) <= settings.BOMB_TIMER:
-            continue
-        
-        #if direct line and not stopped by wall
-        if current_bomb[0] == 0:
-            p = position
-            #for all nodes between bomb and position, check if wall stops explosion
-            for i in range(current_bomb[1]):
-                if field[position[0], position[1] + i] == -1:
-                    blocked = True
-        if current_bomb[1] == 0:
-            p = position
-            #for all nodes between bomb and position, check if wall stops explosion
-            for i in range(current_bomb[0]):
-                if field[position[0] + 1, position[1]] == -1:
-                    blocked = True
-        
-        if current_bomb[0] == 0 and not blocked:
-            res  = np.maximum(res, countdown)
-        if current_bomb[1] == 0 and not blocked:
-            res  = np.maximum(res, countdown)
-
-    self.logger.debug(f' test secure : {position}, result: {res}')
-    return res
-        
-
+    # For example, you could construct several channels of equal shape, ...
+    channels = adjacent.tolist() + [bomb] + nearest_bomb + [boom]
+    #channels.append(bomb)
+    #channels.append(list(position))
+    #channels.append(list(bombs))
     
     
-def BFS_escape(field, position, bombs, self):    
-    self.logger.debug(f' in BFS_escape ')
-    x_occupied, y_occupied = np.where(field != 0)
-    explored = [(x_occupied[i], y_occupied[i]) for i in range(len(x_occupied))]
-     
-    # Queue for traversing the
-    # graph in the BFS
-    queue = [[position]]
-     
-    # If the desired node is
-    # reached
-    if secure(position, bombs, field, self) == 0:
-        return 4
-     
-    # Loop to traverse the graph
-    # with the help of the queue
-    while queue:
-        path = queue.pop(0)
-        node = path[-1]
-        
-        #check if too far away
-        if len(path) > settings.BOMB_TIMER:
-            continue
 
-        
-         
-        # Condition to check if the
-        # current node is not visited
-        
-        top =(node[0] , node[1] - 1)
-        right= (node[0] + 1, node[1])
-        bottom= (node[0] , node[1] + 1)
-        left = (node[0]  - 1, node[1])
-        
-        neighbours = [top, right, bottom, left]
-            
-        # Loop to iterate over the
-        # neighbours of the node
-        for neighbour in neighbours:
-            if neighbour in explored:
-                continue
-
-            if secure(neighbour, bombs, field, self) == 0:
-                path.append(neighbour)
-                self.logger.debug(f' shortest path: {path} ')
-                if path[1] == top:
-                    return 0
-                elif path[1] == right:
-                    return 1
-                elif path[1] == bottom:
-                    return 2
-                else:
-                    return 3
-                
-            
-
-            
-            path.append(neighbour)
-            queue.append(path)
-                
-            # Condition to check if the
-            # neighbour node is the goal
-             # return shortest path and the length
-            explored.append(node)
- 
-    # Condition when the nodes
-    # are not connected
-    #print("connecting path doesn't exist")
-    return None
+    # concatenate them as a feature tensor (they must have the same shape), ...
+    stacked_channels = np.stack(channels)
+    #print(stacked_channels)
+    # and return them as a vector
+    return stacked_channels.reshape(1, -1)
