@@ -11,13 +11,14 @@ import settings
 
 import numpy as np
 from sklearn.tree import DecisionTreeRegressor
+from scipy.spatial import distance
 
 
 
 #change in both callbacks & train!
 ACTIONS = ['UP', 'RIGHT', 'DOWN', 'LEFT', 'WAIT', 'BOMB']
 dead_state = np.array([-100, -100, -100, -100, -100, -100, -100]).reshape(1, -1)
-new_prob = [10]*6
+new_prob = [100]*6
 
 
 
@@ -132,17 +133,31 @@ def state_to_features(game_state: dict, self, log:bool) -> np.array:
                         - bomb])
     
     
-    
+    #if agent stands on adjacent field, it is blocked
+    #if agent stands next to adjacent field, it is dangerous
+    #(if opponent drops bomb and we move into that direction, we might not have enough time to run away)
     for agent in others:
         agent_pos = agent[3]
         if agent_pos == top_pos:
             adjacent[top] = occupied
+        elif distance.euclidean(agent_pos, top_pos) == 1:
+            adjacent[top] = 1
+
         if agent_pos == right_pos:
             adjacent[right] = occupied
+        elif distance.euclidean(agent_pos, right_pos) == 1:
+            adjacent[right] = 1
+
         if agent_pos == bottom_pos:
             adjacent[bottom] = occupied
+        elif distance.euclidean(agent_pos, bottom_pos) == 1:
+            adjacent[bottom] = 1
+
+
         if agent_pos == left_pos:
             adjacent[left] = occupied
+        elif distance.euclidean(agent_pos, left_pos) == 1:
+            adjacent[left] = 1
                         
     #return adjacent.reshape(1, -1)
     explosion = np.array([explosion_map[top_pos ],
@@ -365,6 +380,7 @@ def BFS_escape(field, position, bombs, oponents, self, test):
 
 def BFS_opponent(field, position, others, coins, self):    
     self.logger.debug(f' in BFS_opponent ')
+    self.logger.debug(f' coins: {coins} ')
     timestamp = time.perf_counter()
     x_occupied, y_occupied = np.where(field != 0)
     explored = [(x_occupied[i], y_occupied[i]) for i in range(len(x_occupied))]
@@ -419,6 +435,10 @@ def BFS_opponent(field, position, others, coins, self):
                     new_path.append(neighbour)
                     queue.append(new_path)
                     continue
+
+                if neighbour in coins:
+                    self.logger.debug(f' found coin ')
+
                 
                 path.append(neighbour)
                 #self.logger.debug(f' opponent path: {path} ')
@@ -491,7 +511,7 @@ def BFS_crate(field, position, self):
         for neighbour in neighbours:
             
             
-            if field[neighbour] == 1:
+            if field[neighbour] != 1:
                 new_path = path.copy()    
                 new_path.append(neighbour)
                 queue.append(new_path)

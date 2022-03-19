@@ -34,12 +34,13 @@ TOWARDS_CRATE = "TOWARDS CRATE"
 AVOID_CRATE = "AVOID CRATE"
 
 SMART_BOMB = "SMART BOMB"
+OK_BOMB = "OK BOMB"
 DUMB_BOMB = "DUMB BOMB"
 
 
 #change in both callbacks & train!
 dead_state = np.array([-100, -100, -100, -100, -100, -100, -100]).reshape(1, -1)
-new_prob = [10]*6
+new_prob = [100]*6
 ACTIONS = ['UP', 'RIGHT', 'DOWN', 'LEFT', 'WAIT', 'BOMB']
 
 
@@ -118,11 +119,11 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
         events.append(INTO_DANGER)
     #if new_features[0][4] == 3: #run into exploding fields is bad
     #    events.append(SUICIDE)
-    if new_features[0][4] == 0: #moving to safe places is good
+    if idx_action != 5 and old_features[0][idx_action] <= 0: #moving to safe places is good
         events.append(SWEET_SPOT)
     #waiting on a dangerous field is bad
     if idx_action in [4,5] and old_features[0][4] == 1:
-        events.append(SUICIDE)
+        events.append(INTO_DANGER)
 
 
     
@@ -132,13 +133,13 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
             events.append(TOWARDS_OPPONENT)
         elif 3 - old_features[0][5] == idx_action:
             events.append(AVOID_OPPONENT)
+        elif old_features[0][5] != -100:
+            events.append(AVOID_CRATE)
         else:
-            events.append(AVOID_CRATE)
-
-        if old_features[0][6] == idx_action:
-            events.append(TOWARDS_CRATE)
-        if 3 - old_features[0][6] == idx_action:
-            events.append(AVOID_CRATE)
+            if old_features[0][6] == idx_action:
+                events.append(TOWARDS_CRATE)
+            if 3 - old_features[0][6] == idx_action:
+                events.append(AVOID_CRATE)
             
     
     #don't drop bombs if not allowed
@@ -151,7 +152,10 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
         if old_features[0][5]!= -100 and old_features[0][old_features[0][5]] == 2:
             events.append(SMART_BOMB)
         elif old_features[0][6]!= -100 and old_features[0][old_features[0][6]] == 2:
-            events.append(SMART_BOMB)
+            if old_features[0][5] != -100:
+                events.append(OK_BOMB)
+            else:
+                events.append(SMART_BOMB)
         else:
             events.append(DUMB_BOMB)
     
@@ -240,7 +244,7 @@ def reward_from_events(self, events: List[str]) -> int:
     game_rewards = {
         e.INVALID_ACTION: -1000,
         #e.BOMB_EXPLODED: 100,
-        e.BOMB_DROPPED: -5,
+        #e.BOMB_DROPPED: -5,
         #e.KILLED_SELF: -20,
         INTO_DANGER: -50,
         OUT_OF_DANGER: 30,
@@ -252,7 +256,9 @@ def reward_from_events(self, events: List[str]) -> int:
 
         SUICIDE : -100,
         SWEET_SPOT: 10, 
-        SMART_BOMB: 100# idea: the custom event is bad
+        SMART_BOMB: 100,
+        OK_BOMB: 5,
+        DUMB_BOMB: -25
     }
     reward_sum = 0
     for event in events:
@@ -437,7 +443,7 @@ def augment_data(self, state, action: str, new_state, events: List[str]):
         #self.logger.debug(f'to test {rot_state}')
         #self.logger.debug(f'{[np.array_equal(np.append(adjacent, [rot_action, movement]), ar) for ar in tested]}')
         if np.any([np.array_equal(rot_state, ar) for ar in tested]):
-            #self.logger.debug(f' Mirror symmetric')
+            self.logger.debug(f' Mirror symmetric')
             return self.y
 
         
