@@ -13,7 +13,7 @@ move = -100
 
 #change in both callbacks & train!
 ACTIONS = ['UP', 'RIGHT', 'DOWN', 'LEFT', 'WAIT', 'BOMB']
-dead_state = np.array([-100, -100, -100, -100, -100, -100]).reshape(1, -1)
+dead_state = np.array([-100, -100, -100, -100, -100, -100, -100, -100, -100]).reshape(1, -1)
 new_prob = [10]*6
 
 
@@ -75,6 +75,7 @@ def act(self, game_state: dict) -> str:
         action = np.random.choice(ACTIONS, p=[.25, .25, .25, .25, 0, 0])
     else:
         action = np.random.choice(ACTIONS, p=prediction/np.sum(prediction))
+
     idx_action = ACTIONS.index(action)
     self.logger.debug(f'Action:  {action} - idx: {idx_action}\n')
 
@@ -105,13 +106,14 @@ def state_to_features(game_state: dict, self, log:bool=True) -> np.array:
     """
     # This is the dict before the game begins and after it ends
     if game_state is None:
-        return  np.array([-100, -100, -100, -100, -100, -100, -100]).reshape(1, -1)
+        return  np.array([-100, -100, -100, -100, -100, -100, -100, -100, -100]).reshape(1, -1)
     round = game_state['round']
     step = game_state['step']
     field = game_state['field']
     bombs = game_state['bombs']
     explosion_map = game_state['explosion_map']
     coins = game_state['coins']
+
     name, score, bomb, position = game_state['self']
     others = game_state['others']
     user_input = game_state['user_input']
@@ -163,12 +165,13 @@ def state_to_features(game_state: dict, self, log:bool=True) -> np.array:
                         explosion_map[left_pos],
                         explosion_map[position]
                         ])
+
     info = adjacent + exploding*explosion
 
 
     collect = search_coin(self, game_state)
     if collect == top_pos and info[top] == 0:
-        info[top] = -1
+        info[top] = -1 # go to top!
     if collect == right_pos and info[right] == 0:
         info[right] = -1
     if collect == bottom_pos and info[bottom] == 0:
@@ -221,8 +224,38 @@ def state_to_features(game_state: dict, self, log:bool=True) -> np.array:
         self.logger.debug(f' info : {info}, move: {movement}')
     info = np.append(info, movement)
 
+    # distance to coins
+    # coins is e.g. [(11, 15)]
+    # coin dist is e.g. [-1]
+    # coin_rel_dist is e.g. [[-4  1]]
+
+    if len(coins) > 0:
+        coin_dist = [BFS(field, position, coin)[1] for coin in coins]
+        #print(coin_dist)
+        coin_rel_dist = np.array(coins) - np.array(position)[None,]
+        #print(coin_rel_dist)
+        idx = np.argsort(coin_dist)[0] # sort the distances
+        if coin_dist[idx] == inf: 
+            coin_info = np.zeros(3)
+
+        else:
+            coin_info = np.hstack((coin_dist[idx], coin_rel_dist[idx, :])).flatten()
+
+    else:
+        coin_info = np.zeros(3)
+    #print(coin_info)
+    
+    
+    info = np.append(info, coin_info)
+    #print(info)
+    
 
     return info.reshape(1, -1)
+
+    # info[0] - info[3]: 4 directions
+    # info[4]: current position
+    # info[5]: movement for escaping
+    # info[6] - info[8]: distance to each coin
 
 def secure(position, bombs, field, self):
     
@@ -388,7 +421,7 @@ def search_coin(self, game_state):
     shortest_path = inf
 
     for coin in coins:
-        path, path_length = BFS_SP(field, position, coin) # find shortest path to coin # e.g. ([(0, 1), (1, 1), (2, 1)], 2)
+        path, path_length = BFS(field, position, coin) # find shortest path to coin # e.g. ([(0, 1), (1, 1), (2, 1)], 2)
         self.logger.debug(f'shortest path: {path}')
         if path_length < shortest_path:
             shortest_path = path_length
@@ -398,19 +431,6 @@ def search_coin(self, game_state):
                 move = None
     
     return move
-
-
-
-"""
-move = -1
-shortest_path = inf
-for coin in coins: 
-  find_shortest_path_to_coin
-  if path_length < shortest_path:
-      shotest_path = path_length
-      move = first_step
-return move
-"""
 
 
 def get_free_neighbors(game_state):
@@ -436,7 +456,7 @@ def get_free_neighbors(game_state):
     return graph # {(1, 1): [(1, 0), (2, 1), (0, 1)], ...}
 
 
-def BFS_SP(field, start, goal):
+def BFS(field, start, goal):
     """from https://www.geeksforgeeks.org/building-an-undirected-graph-and-finding-shortest-path-using-dictionaries-in-python/"""
     
     
