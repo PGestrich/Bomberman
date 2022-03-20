@@ -10,6 +10,7 @@ from fallbacks import pygame
 from items import Coin
 
 
+
 class ReplayWorld(GenericWorld):
     def __init__(self, args: WorldArgs):
         super().__init__(args)

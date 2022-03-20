@@ -38,6 +38,7 @@ OK_BOMB = "OK BOMB"
 DUMB_BOMB = "DUMB BOMB"
 
 
+
 #change in both callbacks & train!
 dead_state = np.array([-100, -100, -100, -100, -100, -100, -100]).reshape(1, -1)
 new_prob = [100]*6
@@ -103,13 +104,12 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
     self.logger.debug(f"In game_events_occured")
     old_features = state_to_features(old_game_state, self, True)
     self.logger.debug(f"Old Features: {old_features}")
-    self.logger.debug(f'f: {old_features[0][6]}, type: { type(old_features[0][6])}')
     new_features = state_to_features(new_game_state, self, False)
-    self.logger.debug(f"New Features: {new_features}")
+    #self.logger.debug(f"New Features: {new_features}")
     
 
     
-    # add events
+    # add events:
     idx_action = ACTIONS.index(self_action)
 
     #escaping danger
@@ -117,24 +117,22 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
         events.append(OUT_OF_DANGER)
     if idx_action != 5 and old_features[0][idx_action] > 0:
         events.append(INTO_DANGER)
-    #if new_features[0][4] == 3: #run into exploding fields is bad
-    #    events.append(SUICIDE)
     if idx_action != 5 and old_features[0][idx_action] <= 0: #moving to safe places is good
         events.append(SWEET_SPOT)
-    #waiting on a dangerous field is bad
+    #waiting/bomb dropping on a dangerous field is bad
     if idx_action in [4,5] and old_features[0][4] == 1:
         events.append(INTO_DANGER)
 
 
     
-    #move
-    if idx_action in range(4) : 
+    #targeted movement
+    if idx_action in range(4) :
+        #moving towards opponents is good 
         if old_features[0][5] == idx_action:
             events.append(TOWARDS_OPPONENT)
-        elif 3 - old_features[0][5] == idx_action:
-            events.append(AVOID_OPPONENT)
         elif old_features[0][5] != -100:
-            events.append(AVOID_CRATE)
+            events.append(AVOID_OPPONENT)
+        #crates not as imporant, but still good
         else:
             if old_features[0][6] == idx_action:
                 events.append(TOWARDS_CRATE)
@@ -142,15 +140,16 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
                 events.append(AVOID_CRATE)
             
     
-    #don't drop bombs if not allowed
-    #encourage dropping bonbs next to crates or opponents
+    
     
     if idx_action == 5:
+        #don't drop bombs if not allowed
         if old_features[0][4] != -1:
             events.append(e.INVALID_ACTION)
-        
+        #encourage dropping bonbs next to crates or opponents
         if old_features[0][5]!= -100 and old_features[0][old_features[0][5]] == 2:
             events.append(SMART_BOMB)
+        #allow bomb dropping if not harmful
         elif old_features[0][6]!= -100 and old_features[0][old_features[0][6]] == 2:
             if old_features[0][5] != -100:
                 events.append(OK_BOMB)
@@ -164,14 +163,6 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
 
     self.y = augment_data(self, old_features, self_action, new_features, events)
     self.logger.debug(f'Encountered game event(s) {events} in step {new_game_state["step"]}\n')
-
-    # if 'BOMB_EXPLODED' in events:        
-    #     for t in self.transitions:
-    #         self.logger.debug(f'transition: {t.action}')
-    #         self.y = augment_data(self, t.state, t.action, t.next_state, ['SURVIVED'])
-                
-    
-    
     self.model.fit(self.X, np.nan_to_num(self.y))
 
 def end_of_round(self, last_game_state: dict, last_action: str, events: List[str]):
@@ -192,40 +183,62 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
     old_features = state_to_features(last_game_state, self, False)
     self.transitions.append(Transition(old_features, last_action, None, reward_from_events(self, events)))
 
+
+    # add events:
     idx_action = ACTIONS.index(last_action)
-    if old_features[0][idx_action] in [2,3]: #run into exploding fields is bad
+
+    #escaping danger
+    if idx_action != 5 and old_features[0][4] > 0 and  old_features[0][idx_action] == 0:
+        events.append(OUT_OF_DANGER)
+    if idx_action != 5 and old_features[0][idx_action] > 0:
         events.append(INTO_DANGER)
+    if idx_action != 5 and old_features[0][idx_action] <= 0: #moving to safe places is good
+        events.append(SWEET_SPOT)
+    #waiting/bomb dropping on a dangerous field is bad
+    if idx_action in [4,5] and old_features[0][4] == 1:
+        events.append(INTO_DANGER)
+
+
     
-    #un-comment if using q_learn and not augment_data
-    #idx_s = ((self.X == old_features).all(axis=1).nonzero())[0]
-    #if len(idx_s) == 0:
-    #    self.y = np.vstack((self.y, np.full((1,len(ACTIONS)), 1)))
-    #    self.X = np.vstack((self.X, old_features))
-    #    idx_s = [len(self.y)-1]
+    #targeted movement
+    if idx_action in range(4) :
+        #moving towards opponents is good 
+        if old_features[0][5] == idx_action:
+            events.append(TOWARDS_OPPONENT)
+        elif old_features[0][5] != -100:
+            events.append(AVOID_OPPONENT)
+        #crates not as imporant, but still good
+        else:
+            if old_features[0][6] == idx_action:
+                events.append(TOWARDS_CRATE)
+            if 3 - old_features[0][6] == idx_action:
+                events.append(AVOID_CRATE)
+            
+    
+    
+    
+    if idx_action == 5:
+        #don't drop bombs if not allowed
+        if old_features[0][4] != -1:
+            events.append(e.INVALID_ACTION)
+        #encourage dropping bonbs next to crates or opponents
+        if old_features[0][5]!= -100 and old_features[0][old_features[0][5]] == 2:
+            events.append(SMART_BOMB)
+        #allow bomb dropping if not harmful
+        elif old_features[0][6]!= -100 and old_features[0][old_features[0][6]] == 2:
+            if old_features[0][5] != -100:
+                events.append(OK_BOMB)
+            else:
+                events.append(SMART_BOMB)
+        else:
+            events.append(DUMB_BOMB)
+
+
+
     
     idx_action = ACTIONS.index(last_action)
-    #self.y[idx_s, idx_action] = q_learn(self, old_features, last_action, dead_state, events, idx_s)
     self.y = augment_data(self, old_features, last_action, dead_state, events)
     
-    #unlearn suicidal behaviour
-    """ if 'KILLED_SELF' in events:
-        print_state = last_game_state['self'][3]
-        explosion_map = last_game_state['explosion_map']
-        bombs = last_game_state['bombs']
-        
-        
-        for t in self.transitions:
-            self.logger.debug(f'transition: {t.action}')
-
-            #discourage suicidal behaviour (waiting for bomb to explode)
-            if t.action in ['WAIT', 'BOMB']:
-                #idx_s = ((self.X == t.state).all(axis=1).nonzero())[0]
-                #self.y[idx_s, idx_action] = q_learn(self, t.state, t.action, dead_state, ['SUIZIDE'], idx_s)
-                self.y = augment_data(self, t.state, t.action, dead_state, ['KILLED_SELF'])
-            else:
-                #idx_s = ((self.X == t.state).all(axis=1).nonzero())[0]
-                #self.y[idx_s, idx_action] = q_learn(self, t.state, t.action, dead_state, ['SUIZIDE'], idx_s)
-                self.y = augment_data(self, t.state, t.action, dead_state, ['SUIZIDE']) """
     self.model.fit(self.X, np.nan_to_num(self.y))
 
     # Store the model
@@ -254,9 +267,9 @@ def reward_from_events(self, events: List[str]) -> int:
         TOWARDS_CRATE: 15,
         AVOID_CRATE: -10, 
 
-        SUICIDE : -100,
+        #SUICIDE : -100,
         SWEET_SPOT: 10, 
-        SMART_BOMB: 100,
+        SMART_BOMB: 150,
         OK_BOMB: 5,
         DUMB_BOMB: -25
     }
@@ -268,27 +281,22 @@ def reward_from_events(self, events: List[str]) -> int:
     return reward_sum
 
 
-def q_learn(self, old_state, self_action: str, new_state, events: List[str], idx_s)-> int:
+def q_learn(self, old_state, self_action: str, new_state, reward, idx_s, log = False)-> int:
     """
-    Calculate new reward
+    Update data using Q-learn
     """
-
+    #define parameters
     GAMMA = 0.2
     ALPHA = 0.9
 
     
     
     idx_action = ACTIONS.index(self_action)
-    #self.logger.debug(f'action {self_action}, idx {idx_action}')
-
-    reward = reward_from_events(self, events)
     
-    
+    #get all imporant values
     q_old = self.y[idx_s, idx_action]
 
-    #get index of Q(s_t+1):
     idx_new =  ((self.X == new_state).all(axis=1).nonzero())[0]
-    #not present
     if len(idx_new) == 0:
         self.y = np.vstack((self.y, new_prob))
         self.X = np.vstack((self.X, new_state))
@@ -297,59 +305,48 @@ def q_learn(self, old_state, self_action: str, new_state, events: List[str], idx
     new_pred = self.y[idx_new]
     q_max = np.amax(new_pred)
 
+    #compute new value
     q_new = q_old + ALPHA*(reward + GAMMA*q_max - q_old)
     q_new = np.maximum(q_new, 0)
-    self.logger.debug(f'change {q_old} to  {q_new} with reward {reward}, q_max = {q_max} since new_state= {new_pred}')
+    if log:
+        self.logger.debug(f'change {q_old} to  {q_new} with reward {reward}, q_max = {q_max} since new_state= {new_pred}')
 
     return q_new
 
 
 def augment_data(self, state, action: str, new_state, events: List[str]):
+    """
+    Use symmetries in the Game to create more training data
+    """
 
-    #once had error that new_state was none. Seems to happen rarely, so thats a lazy fix
+    #once had error that new_state was none. Seems to happen rarely, so well just ignore training data with that input
     if new_state is None:
         return self.y
 
     self.logger.debug(f'In augment data')
+    reward = reward_from_events(self, events)
 
-    #test data
-    #state = np.array([[3,1,5,7, 0]])
-    #new_state = np.array([[4,2,6,8, 0]])
-    
+    #get original features ready to rotate
     adjacent = state[0][0:4]
     new_adjacent = new_state[0][0:4]
     movement = state[0][5]
     crate = state[0][6]
-
     new_movement = new_state[0][5]
     new_crate = new_state[0][6]
 
     
 
-    
+    #rotate parameters + already tested
     rot_action = ACTIONS.index(action)
     rotate = [3, 0, 1,2]
-    #self.logger.debug(f'adjacent {adjacent}, new_adjacent {new_adjacent}, action {rot_action} / {action}')
     tested = []
-
-    #test without function:
-    #rot_state = np.append(adjacent, state[0][4:6])
-    #idx_s =  ((self.X == rot_state).all(axis=1).nonzero())[0]
-    #if len(idx_s) == 0:
-    #    self.y = np.vstack((self.y, np.full((1,len(ACTIONS)), 1)))
-    #    self.X = np.vstack((self.X, rot_state))
-    #    idx_s = [len(self.y)-1]
-    #self.y[idx_s, rot_action] = q_learn(self, rot_state, ACTIONS[rot_action], np.append(new_adjacent, [new_state[0][4], movement]), events, idx_s)
-    #idx_action = ACTIONS.index(action)
-    
-    
-    #return self.y
 
     #rotate
     for i in range(4):
         adjacent = adjacent[rotate]
         new_adjacent = new_adjacent[rotate]
 
+        #rotate last two features
         if movement != -100:
             movement = (movement + 1) % 4
         if crate != -100:
@@ -364,15 +361,13 @@ def augment_data(self, state, action: str, new_state, events: List[str]):
             rot_action = (rot_action + 1) % 4
             
             events = update_event(events)
-        #don't double waiting + bomb actions
+        
+        #don't double existing test cases
         elif np.any([np.array_equal(np.append(adjacent, rot_action), ar) for ar in tested]):
             continue
         
         rot_state = np.append(adjacent, [state[0][4], movement, crate])
         new_rot_state = np.append(new_adjacent, [new_state[0][4], new_movement, new_crate])
-        #learn
-        #self.logger.debug(f'Rot Features: {rot_state}, Action: {ACTIONS[rot_action]}')
-        #self.logger.debug(f'New Features: {new_rot_state}')
         tested.append(rot_state)
 
         idx_s = ((self.X == rot_state).all(axis=1).nonzero())[0]
@@ -383,10 +378,10 @@ def augment_data(self, state, action: str, new_state, events: List[str]):
         
         
         
-            
-        self.y[idx_s, rot_action] = q_learn(self, rot_state, ACTIONS[rot_action], new_rot_state, events, idx_s)
+        #update rotated data    
+        self.y[idx_s, rot_action] = q_learn(self, rot_state, ACTIONS[rot_action], new_rot_state, reward, idx_s)
         
-        self.logger.debug(f' New Probablities: {self.y[idx_s]}')
+    self.logger.debug(f' New Probablities: {self.y[idx_s]}')
         
     
     
@@ -396,14 +391,12 @@ def augment_data(self, state, action: str, new_state, events: List[str]):
     rot_action = ACTIONS.index(action)
     adjacent = state[0][[2,1,0,3]]
     new_adjacent = new_state[0][[2,1,0,3]]
-
     movement = state[0][5]
     crate = state[0][6]
-
     new_movement = new_state[0][5]
     new_crate = new_state[0][6]
 
-
+    #mirror everything if necessary
     if rot_action in [0, 2]:
         rot_action = (rot_action + 2) % 4
         if movement != -100:
@@ -418,7 +411,7 @@ def augment_data(self, state, action: str, new_state, events: List[str]):
     
     
         
-    #else process mirrored states too
+    # process mirrored states (aka rotating 2.0)
     for i in range(4):
         adjacent = adjacent[rotate]
         new_adjacent = new_adjacent[rotate]
@@ -438,17 +431,10 @@ def augment_data(self, state, action: str, new_state, events: List[str]):
         new_rot_state = np.append(new_adjacent, [new_state[0][4], new_movement, new_crate])
         
         
-        #return self if state is mirror-symmetric
-        #self.logger.debug(f'tested : {tested}')
-        #self.logger.debug(f'to test {rot_state}')
-        #self.logger.debug(f'{[np.array_equal(np.append(adjacent, [rot_action, movement]), ar) for ar in tested]}')
         if np.any([np.array_equal(rot_state, ar) for ar in tested]):
             self.logger.debug(f' Mirror symmetric')
             return self.y
 
-        
-        #self.logger.debug(f'Rot2 Features: {rot_state}, Action: {ACTIONS[rot_action]}')
-        #self.logger.debug(f'New2 Features: {new_rot_state}')
         tested.append(rot_state)
         
         idx_s = ((self.X == rot_state).all(axis=1).nonzero())[0]
@@ -457,8 +443,7 @@ def augment_data(self, state, action: str, new_state, events: List[str]):
             self.X = np.vstack((self.X, rot_state))
             idx_s = [len(self.y)-1]
         
-        self.y[idx_s, rot_action] = q_learn(self,rot_state, ACTIONS[rot_action], new_rot_state, events, idx_s)
-        #self.logger.debug(f' New Probablities: {self.y[idx_s]}')
+        self.y[idx_s, rot_action] = q_learn(self,rot_state, ACTIONS[rot_action], new_rot_state, reward, idx_s)
 
     return self.y
 

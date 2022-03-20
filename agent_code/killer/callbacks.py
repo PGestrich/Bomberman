@@ -40,6 +40,10 @@ def setup(self):
     if self.train or not os.path.isfile("my-saved-model.pt"):
         self.logger.info("Setting up model from scratch.")
         self.model = DecisionTreeRegressor(random_state=0)
+        #self.logger.info("Loading model from saved state.")
+        #with open("my-saved-model.pt", "rb") as file:
+        #    self.model = pickle.load(file)
+    
     else:
         self.logger.info("Loading model from saved state.")
         with open("my-saved-model.pt", "rb") as file:
@@ -116,7 +120,7 @@ def state_to_features(game_state: dict, self, log:bool) -> np.array:
 
 
     #meaning of numbers
-    exploding = 3
+    exploding = 1
     occupied = 2
     countdown = 1
     
@@ -159,7 +163,7 @@ def state_to_features(game_state: dict, self, log:bool) -> np.array:
         elif distance.euclidean(agent_pos, left_pos) == 1:
             adjacent[left] = 1
                         
-    #return adjacent.reshape(1, -1)
+    #explosions are dangerous too
     explosion = np.array([explosion_map[top_pos ],
                         explosion_map[right_pos],
                         explosion_map[bottom_pos ],
@@ -188,23 +192,24 @@ def state_to_features(game_state: dict, self, log:bool) -> np.array:
 
     #encourage escaping into right direction 
     if info[4] in [1,3]:
-        self.logger.debug(f' find escape route')
+        #self.logger.debug(f' find escape route')
         escape = BFS_escape(field, position, bombs, others, self, False)
         self.logger.debug(f'escape : {escape}')
-        if escape is not None and info[escape] == 1:
+        if escape is not None and info[escape] in [1,3]:
             info[escape] = 0
 
 
     # discourage bomb dropping if no escape rout:
     if info[current] == -1:
-        self.logger.debug(f'Test escape')
+        #self.logger.debug(f'Test escape')
         bombs.append((position, 3))
         test_escape = BFS_escape(field, position, bombs, others, self, True)
-        self.logger.debug(f'escape direction : {test_escape}')
+        self.logger.debug(f'possible escape : {test_escape}')
             
         if test_escape is None:
             info[current] = 0
     
+    #include info about opponents/coins and crates
     movement = BFS_opponent(field, position, others, coins,  self)
     crate = BFS_crate(field, position, self)
     
@@ -218,8 +223,11 @@ def state_to_features(game_state: dict, self, log:bool) -> np.array:
     return info.reshape(1, -1)
 
 def secure(position, bombs, field, self):
+    """
+    Test if position is secure (Not in the way of a bomb)
+    """
     
-    exploding = 3
+    exploding = 1
     occupied = 2
     countdown = 1
 
@@ -275,10 +283,18 @@ def secure(position, bombs, field, self):
     
     
 def BFS_escape(field, position, bombs, oponents, self, test):    
+    """
+    Use Breadth-First-Search to find an escape rout from bombs
+    """
     self.logger.debug(f' in BFS_escape ')
+    self.logger.debug(f'field \n  {field}')
 
     x_occupied, y_occupied = np.where(field != 0)
     explored = [(x_occupied[i], y_occupied[i]) for i in range(len(x_occupied))]
+
+    #agents block too
+    for agent in oponents: 
+        explored.append(agent[3])
 
     #simple trap preventing:
     #all agents that can drop a bomb will do so next step
@@ -301,8 +317,7 @@ def BFS_escape(field, position, bombs, oponents, self, test):
     o_bottom= (position[0] , position[1] + 1)
     o_left = (position[0]  - 1, position[1])
      
-    # If the desired node is
-    # reached
+    # If the desired node is reached
     if secure(position, bombs, field, self) == 0:
         return 4
      
@@ -311,18 +326,19 @@ def BFS_escape(field, position, bombs, oponents, self, test):
     while queue:
         path = queue.pop(0)
         node = path[-1]
+        self.logger.debug(f'current {path}')
         
         if node != position and node in explored:
             continue
+            
+        
         
         #check if too far away
         if len(path) > settings.BOMB_TIMER:
             continue
 
         
-         
-        # Condition to check if the
-        # current node is not visited
+        
         
         top =(node[0] , node[1] - 1)
         right= (node[0] + 1, node[1])
@@ -333,25 +349,29 @@ def BFS_escape(field, position, bombs, oponents, self, test):
         np.random.shuffle(neighbours)
         #neighbours = neighbours[np.random.permutation(4)]
         #print(neighbours)
-        # account for timer of bombs
+        
+        # account for timer of bombs (only simple approximation of explosions by using explosion timer)
         bombs_timed =[]
         for bomb in bombs:
-            if bomb[1]  - (len(path) - 1) > 0:
-                bombs_timed.append((bomb[0], bomb[1]  - (len(path) - 1)))
+            if bomb[1]  - (len(path) - 1) > - settings.EXPLOSION_TIMER:
+                bombs_timed.append((bomb[0], bomb[1]  - (len(path) - 1) + settings.EXPLOSION_TIMER))
 
-         
+        
+        new_paths = []
+        discard = False
         # Loop to iterate over the
         # neighbours of the node
         for neighbour in neighbours:
             
+            #discard if blocked
             if neighbour in explored:
                 continue
             
-            
-
-            if secure(neighbour, bombs_timed, field, self) == 0:
+            #if safe, return the first step
+            safe = secure(neighbour, bombs_timed, field, self)
+            if  safe == 0:
                 path.append(neighbour)
-                #self.logger.debug(f' shortest path: {path} ')
+                self.logger.debug(f' shortest path: {path} ')
                 if path[1] == o_top:
                     return 0
                 elif path[1] == o_right:
@@ -360,26 +380,32 @@ def BFS_escape(field, position, bombs, oponents, self, test):
                     return 2
                 else:
                     return 3
-                
+            
+            
+
             
 
             
             new_path = path.copy()    
             new_path.append(neighbour)
-            queue.append(new_path)
+            new_paths.append(new_path)
+            #new_paths.append(new_path)
+            
+        
+        explored.append(node)    
+        if not discard and new_paths != []:
+            for p in new_paths:
+                queue.append(p)
                 
-            # Condition to check if the
-            # neighbour node is the goal
-             # return shortest path and the length
-            explored.append(node)
- 
-    # Condition when the nodes
-    # are not connected
-    #print("connecting path doesn't exist")
     return None
 
+
+
 def BFS_opponent(field, position, others, coins, self):    
-    self.logger.debug(f' in BFS_opponent ')
+    """
+    Use Breadth-First-Search to find opponents and coins
+    """
+    #self.logger.debug(f' in BFS_opponent ')
     self.logger.debug(f' coins: {coins} ')
     timestamp = time.perf_counter()
     x_occupied, y_occupied = np.where(field != 0)
@@ -396,7 +422,8 @@ def BFS_opponent(field, position, others, coins, self):
     o_bottom= (position[0] , position[1] + 1)
     o_left = (position[0]  - 1, position[1])
 
-    res = None
+    res = -100
+    found_opponent = False
      
      
     # Loop to traverse the graph
@@ -409,10 +436,6 @@ def BFS_opponent(field, position, others, coins, self):
         if node in explored:
             continue
 
-        
-         
-        # Condition to check if the
-        # current node is not visited
         
         top =(node[0] , node[1] - 1)
         right= (node[0] + 1, node[1])
@@ -428,21 +451,11 @@ def BFS_opponent(field, position, others, coins, self):
             if neighbour in explored:
                 continue
             
-            
-            for agent in others:
-                if agent[3] != neighbour and neighbour not in coins:
-                    new_path = path.copy()    
-                    new_path.append(neighbour)
-                    queue.append(new_path)
-                    continue
+            #check if found coin - return first step
+            if neighbour in coins:
+                self.logger.debug(f' found coin ')
 
-                if neighbour in coins:
-                    self.logger.debug(f' found coin ')
-
-                
                 path.append(neighbour)
-                #self.logger.debug(f' opponent path: {path} ')
-                #self.logger.debug(f' time opponent : {time.perf_counter() - timestamp}')
                 if path[1] == o_top:
                     res = 0
                 elif path[1] == o_right:
@@ -452,21 +465,51 @@ def BFS_opponent(field, position, others, coins, self):
                 else:
                     res = 3
                 return res
+            
+            #if opponent already found, only search for coin
+            if found_opponent:
+                new_path = path.copy()    
+                new_path.append(neighbour)
+                queue.append(new_path)
+                continue
 
-            # Condition to check if the
-            # neighbour node is the goal
-             # return shortest path and the length
-            explored.append(node)
+            #else check for opponents too
+            for agent in others:
+                if agent[3] != neighbour:
+                    new_path = path.copy()    
+                    new_path.append(neighbour)
+                    queue.append(new_path)
+                    continue
+
+                
+                path.append(neighbour)
+                if path[1] == o_top:
+                    res = 0
+                elif path[1] == o_right:
+                    res = 1
+                elif path[1] == o_bottom:
+                    res = 2
+                else:
+                    res = 3
+
+                #if no coin visible, stop here
+                if coins == []:
+                    return res
+
+            
+        explored.append(node)
  
-    # Condition when the nodes
-    # are not connected
-    #print("connecting path doesn't exist")
-    #self.logger.debug(f' tested paths: {amount}')
-    #self.logger.debug(f' time opponent: {time.perf_counter() - timestamp}')
-    return -100
+    
+    #if opponent found, but no coins: return oponent
+    #if nothing found, return original value (-100)
+    return res
 
-def BFS_crate(field, position, self):    
-    self.logger.debug(f' in BFS_crate ')
+def BFS_crate(field, position, self): 
+
+    """
+    Use Breadth-First-Search to find crates
+    """   
+    #self.logger.debug(f' in BFS_crate ')
     timestamp = time.perf_counter()
     x_occupied, y_occupied = np.where(field != 0)
     explored = [(x_occupied[i], y_occupied[i]) for i in range(len(x_occupied))]
@@ -494,10 +537,6 @@ def BFS_crate(field, position, self):
             continue
 
         
-         
-        # Condition to check if the
-        # current node is not visited
-        
         top =(node[0] , node[1] - 1)
         right= (node[0] + 1, node[1])
         bottom= (node[0] , node[1] + 1)
@@ -510,7 +549,7 @@ def BFS_crate(field, position, self):
         # neighbours of the node
         for neighbour in neighbours:
             
-            
+            #check if we found crate
             if field[neighbour] != 1:
                 new_path = path.copy()    
                 new_path.append(neighbour)
@@ -528,19 +567,9 @@ def BFS_crate(field, position, self):
             else:
                 res = 3
 
-            #self.logger.debug(f' shortest path: {path}, res: {res} ')
-            #self.logger.debug(f' time crate : {time.perf_counter() - timestamp}')
 
-            return res
-            # Condition to check if the
-            # neighbour node is the goal
-             # return shortest path and the length
-        
+            return res        
         explored.append(node)
  
-    # Condition when the nodes
-    # are not connected
-    #print("connecting path doesn't exist")
-    #self.logger.debug(f' tested paths: {amount}')
-    #self.logger.debug(f' time crate: {time.perf_counter() - timestamp}')
+   #no crate found
     return -100

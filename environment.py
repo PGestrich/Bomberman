@@ -53,7 +53,6 @@ class GenericWorld:
         self.round = 0
         self.round_statistics = {}
 
-        self.rng = np.random.default_rng(args.seed)
 
         self.running = False
 
@@ -334,6 +333,8 @@ class BombeRLeWorld(GenericWorld):
     def __init__(self, args: WorldArgs, agents):
         super().__init__(args)
 
+
+        self.rng = np.random.default_rng(args.seed)
         self.setup_agents(agents)
 
     def setup_agents(self, agents):
