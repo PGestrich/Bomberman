@@ -1,17 +1,17 @@
+from cmath import inf
 from collections import namedtuple, deque
+from dis import code_info
 
 import pickle
 from typing import List
 
 import events as e
-from .callbacks import state_to_features, get_closest_coin_dist
+from .callbacks import state_to_features
 import settings
 
 import numpy as np
 
 from sklearn.tree import DecisionTreeRegressor
-
-import time
 
 # This is only an example!
 Transition = namedtuple('Transition',
@@ -35,8 +35,8 @@ CRATE_DESTROYED = "CRATE_DESTROYED"
 
 
 #change in both callbacks & train!
-dead_state = np.array([-100, -100, -100, -100, -100, -100]).reshape(1, -1)
-new_prob = [10]*6
+dead_state = np.array([-100, -100, -100, -100, -100, -100, -100, -100, -100]).reshape(1, -1)
+new_prob = [10]*6 # modified
 ACTIONS = ['UP', 'RIGHT', 'DOWN', 'LEFT', 'WAIT', 'BOMB']
 
 
@@ -54,7 +54,7 @@ def setup_training(self):
     # (s, a, r, s')
 
     #y: array that saves rewards per action
-    self.y = np.array([0]*6).reshape(1, -1)
+    self.y = np.array([0]*6).reshape(1, -1) # modified
 
     #X: array that saves state before action
     #self.X  = np.array([0, 0,  0, 0, 1, 20, 20, -1]).reshape(1, -1)
@@ -118,8 +118,6 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
     #waiting on a dangerous field is bad
     if idx_action in [4,5] and old_features[0][4] == 1:
         events.append(SUICIDE)
-
-
     
     #move
     if idx_action in range(4) : 
@@ -128,45 +126,37 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
         else:
             events.append(FORWARDS)
     
-        #move toward a coin
-    
-    if 'COIN_COLLECTED' not in events and len(new_game_state['coins']) > 0 and 'COIN_FOUND' not in events:
-        new_dist_coin = get_closest_coin_dist(new_game_state)
-        old_dist_coin = get_closest_coin_dist(old_game_state)
-
-        #print(new_dist_coin, old_dist_coin)
-        #time.sleep(2)
-
-        if new_dist_coin < old_dist_coin: # TODO
-            events.append(TOWARDS_COIN)
-        else:
-            events.append(AWAY_FROM_COIN)
-            
-
     #don't drop bombs if not allowed
     if idx_action == 5 and old_features[0][4] != -1:
         events.append(e.INVALID_ACTION)
+
+    #move toward a coin
+    
+    if 'COIN_COLLECTED' not in events and len(new_game_state['coins']) > 0 and 'COIN_FOUND' not in events:
+        if new_features[-1, 3] < old_features[-1, 3]: # TODO
+            events.append(TOWARDS_COIN)
+        else:
+            events.append(AWAY_FROM_COIN)
     
     self.transitions.append(Transition(old_features, self_action, new_features,  reward_from_events(self, events)))
     #self.y[idx_s, idx_action] = q_learn(self, old_features, self_action, new_features, events, idx_s)
 
+    # the agent gets points for bombs only when it bombs a box  #TODO
+    """
+    if 'CRATE_DESTROYED' in events:
+        for t in self.transitions:
+        #t = self.transitions [X]
+            self.y = augment_data(self, t.state, t.action, dead_state, ['GOOD_DROP']) 
+    """  
+
     self.y = augment_data(self, old_features, self_action, new_features, events)
     self.logger.debug(f'Encountered game event(s) {events} in step {new_game_state["step"]}\n')
-
-    
-    # the agent gets points for bombs only when it bombs a box  #TODO
-
-    #if 'CRATE_DESTROYED' in events:
-    #    for t in self.transitions:
-    #    t = self.transitions [X]
-    #        self.y = augment_data(self, t.state, t.action, dead_state, ['GOOD_DROP']) 
-
 
     # if 'BOMB_EXPLODED' in events:        
     #     for t in self.transitions:
     #         self.logger.debug(f'transition: {t.action}')
     #         self.y = augment_data(self, t.state, t.action, t.next_state, ['SURVIVED'])
-                
+         
     
     #update last action
     if idx_action in range(4):
@@ -174,6 +164,8 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
         self.logger.debug(f"Update action - now {settings.move} \n")
     if idx_action == 5:
         settings.move = 3 - settings.move
+    #print(self.X.shape) #(3, 6)
+    #print(self.y.shape) #(9, 9) # TODO
     self.model.fit(self.X, np.nan_to_num(self.y))
 
 def end_of_round(self, last_game_state: dict, last_action: str, events: List[str]):
@@ -205,7 +197,7 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
     #    self.X = np.vstack((self.X, old_features))
     #    idx_s = [len(self.y)-1]
     
-    idx_action = ACTIONS.index(last_action)
+    #idx_action = ACTIONS.index(last_action)
     #self.y[idx_s, idx_action] = q_learn(self, old_features, last_action, dead_state, events, idx_s)
     self.y = augment_data(self, old_features, last_action, dead_state, events)
     
@@ -243,25 +235,50 @@ def reward_from_events(self, events: List[str]) -> int:
     Here you can modify the rewards your agent get so as to en/discourage
     certain behavior.
     """
+
+    """
     game_rewards = {
         e.INVALID_ACTION: -1000,
-        #e.BOMB_EXPLODED: 100,
-        e.BOMB_DROPPED: 20,
-        #e.KILLED_SELF: -20,
+        #e.MOVED_UP: 10,
+        #e.MOVED_DOWN: 10,
+        #e.MOVED_RIGHT: 10,
+        #e.MOVED_LEFT: 10,
+        #e.GOT_KILLED: -100, 
+        e.BOMB_DROPPED: 5,
+        #e.KILLED_SELF: -100,
+        e.COIN_FOUND: 50,
+        e.COIN_COLLECTED : 200,
         INTO_DANGER: -50,
         OUT_OF_DANGER: 20,
         BACKWARDS: -10,
         FORWARDS: 10, 
-        SUICIDE : -100,
-        SWEET_SPOT: 10, # idea: the custom event is bad
+        SUICIDE : -200,
+        #SWEET_SPOT: 10, # idea: the custom event is bad
+        TOWARDS_COIN: 20,
+        AWAY_FROM_COIN: -20,
+        #CRATE_DESTROYED: 20 # TODO
+        #e.BOMB_EXPLODED: 100, 
+    }
+    """
+    game_rewards = {
+        e.INVALID_ACTION: -1000,
+        #e.BOMB_EXPLODED: 100,
+        e.BOMB_DROPPED: 10,
+        #e.KILLED_SELF: -20,
+        e.COIN_FOUND: 50,
+        e.COIN_COLLECTED : 200,
+        INTO_DANGER: -50,
+        OUT_OF_DANGER: 20,
         TOWARDS_COIN: 50,
         AWAY_FROM_COIN: -50,
+        BACKWARDS: -10,
+        FORWARDS: 10, 
+        SUICIDE : -500,
+        #SWEET_SPOT: 10 # idea: the custom event is bad
     }
-    reward_sum = 0
 
-    while e.BOMB_DROPPED in events and e.CRATE_DESTROYED not in events:
-        events.remove(e.BOMB_DROPPED)
-    
+
+    reward_sum = 0
     for event in events:
         if event in game_rewards:
             reward_sum += game_rewards[event]
@@ -286,17 +303,15 @@ def q_learn(self, old_state, self_action: str, new_state, events: List[str], idx
     
     
     q_old = self.y[idx_s, idx_action]
-
-
-    #print(self.X)
-    #print(new_state)
-    # in the beginning
-    # [[-100. -100. -100. -100. -100. -100.]
-    # [   2.    2.    0.    2.   -1. -100.]]
-    # [ 2.  2.  0.  2. -1.  3.]
-
+    
+    #print(self.X) # 
+    #print(new_state) # 
 
     #get index of Q(s_t+1):
+
+    print('self.X', self.X)
+    print('new_state', new_state)
+
     idx_new =  ((self.X == new_state).all(axis=1).nonzero())[0]
     #not present
     if len(idx_new) == 0:
@@ -327,8 +342,12 @@ def augment_data(self, state, action: str, new_state, events: List[str]):
     #new_state = np.array([[4,2,6,8, 0]])
     
     adjacent = state[0][0:4]
-    new_adjacent = new_state[0][0:4]
+    new_adjacent = new_state[0][0:4] # rotated
     movement = state[0][5]
+    coin_dists = state[0][6:10]
+    #print(state)
+    #print("coin dists", coin_dists)
+    
 
     
 
@@ -359,6 +378,10 @@ def augment_data(self, state, action: str, new_state, events: List[str]):
         if movement != -100:
                 movement = (movement + 1) % 4
         
+        for coin_dist in coin_dists:
+            if coin_dist != inf:
+                coin_dist = (coin_dist + 1) % 4
+
         #rotate action if necessary
         if rot_action in range(4):
             rot_action = (rot_action + 1) % 4
@@ -369,21 +392,37 @@ def augment_data(self, state, action: str, new_state, events: List[str]):
             continue
         
         rot_state = np.append(adjacent, [state[0][4], movement])
+        rot_state = np.append(rot_state, coin_dists)
+
         #learn
         self.logger.debug(f'Rot Features: {rot_state}, Action: {ACTIONS[rot_action]}')
         self.logger.debug(f'New Features: {np.append(new_adjacent, new_state[0][4])}')
         tested.append(rot_state)
 
-        idx_s = ((self.X == rot_state).all(axis=1).nonzero())[0]
+        print(self.X)
+        print("rot", rot_state)
+        
+        idx_s = ((self.X == rot_state).all().nonzero())[0] # to ignore coin-related features
+        
         if len(idx_s) == 0:
             self.y = np.vstack((self.y, new_prob))
-            self.X = np.vstack((self.X, rot_state))
+            self.X = np.vstack((self.X, rot_state)) # modified
             idx_s = [len(self.y)-1]
         
         new_movement = movement
+        new_coin_dists = coin_dists
+        print("coin", new_coin_dists)
+
         if rot_action in range(4):
             new_movement = rot_action
-        self.y[idx_s, rot_action] = q_learn(self, rot_state, ACTIONS[rot_action], np.append(new_adjacent, [new_state[0][4], new_movement]), events, idx_s)
+            new_coin_dists = rot_action
+
+
+        state1 = np.append(new_adjacent, [new_state[0][4], new_movement]) # TODO
+        print('stat1 before: ',state1)
+        state1 = np.append(state1, new_coin_dists)
+        print('stat1 after: ',state1)
+        self.y[idx_s, rot_action] = q_learn(self, rot_state, ACTIONS[rot_action], state1, events, idx_s)
         
         self.logger.debug(f' New Probablities: {self.y[idx_s]}')
         
@@ -395,10 +434,16 @@ def augment_data(self, state, action: str, new_state, events: List[str]):
     rot_action = ACTIONS.index(action)
     adjacent = state[0][[2,1,0,3]]
     new_adjacent = new_state[0][[2,1,0,3]]
+
     if rot_action in [0, 2]:
         rot_action = (rot_action + 2) % 4
         if movement != -100:
             movement = (movement + 2) %4
+
+        for coin_dist in coin_dists:
+            if coin_dist != inf:
+                coin_dist = (coin_dist + 1) % 4
+
         events = update_event(update_event(events))
     
     
@@ -410,10 +455,15 @@ def augment_data(self, state, action: str, new_state, events: List[str]):
         if movement != -100:
                 movement = (movement + 1)%4
 
+        for coin_dist in coin_dists:
+            if coin_dist != inf:
+                coin_dist = (coin_dist + 1) % 4
+
         if rot_action in range(4):
             rot_action = (rot_action + 1) % 4
             events = update_event(events)
         rot_state = np.append(adjacent, [state[0][4], movement])
+        rot_state = np.append(rot_state, coin_dists)
         
         
         #return self if state is mirror-symmetric
@@ -428,18 +478,32 @@ def augment_data(self, state, action: str, new_state, events: List[str]):
         self.logger.debug(f'Rot2 Features: {rot_state}, Action: {ACTIONS[rot_action]}')
         self.logger.debug(f'New2 Features: {np.append(new_adjacent, new_state[0][4])}')
         tested.append(rot_state)
+
+
+        new_movement = movement
+        new_coin_dists = coin_dists
+
+        if rot_action in range(4):
+            new_movement = rot_action
+            new_coin_dists = rot_action
+
         
-        idx_s = ((self.X == rot_state).all(axis=1).nonzero())[0]
+        state2 = np.append(new_adjacent, [new_state[0][4], new_movement])
+        state2 = np.append(state2, new_coin_dists)
+
+        #print('X', self.X)
+        #print('state', state2)
+        
+        #print('test', self.X == state2)
+        idx_s = ((self.X == state2).all(axis=1).nonzero())[0]
         if len(idx_s) == 0:
             self.y = np.vstack((self.y, new_prob))
             self.X = np.vstack((self.X, rot_state))
             idx_s = [len(self.y)-1]
         
 
-        new_movement = movement
-        if rot_action in range(4):
-            new_movement = rot_action
-        self.y[idx_s, rot_action] = q_learn(self,rot_state, ACTIONS[rot_action], np.append(new_adjacent, [new_state[0][4], new_movement]), events, idx_s)
+        
+        self.y[idx_s, rot_action] = q_learn(self,rot_state, ACTIONS[rot_action], state2, events, idx_s)
         self.logger.debug(f' New Probablities: {self.y[idx_s]}')
 
     return self.y

@@ -13,7 +13,7 @@ move = -100
 
 #change in both callbacks & train!
 ACTIONS = ['UP', 'RIGHT', 'DOWN', 'LEFT', 'WAIT', 'BOMB']
-dead_state = np.array([-100, -100, -100, -100, -100, -100]).reshape(1, -1)
+dead_state = np.array([-100, -100, -100, -100, -100, -100, -100, -100, -100]).reshape(1, -1)
 new_prob = [10]*6
 
 
@@ -75,6 +75,7 @@ def act(self, game_state: dict) -> str:
         action = np.random.choice(ACTIONS, p=[.25, .25, .25, .25, 0, 0])
     else:
         action = np.random.choice(ACTIONS, p=prediction/np.sum(prediction))
+
     idx_action = ACTIONS.index(action)
     self.logger.debug(f'Action:  {action} - idx: {idx_action}\n')
 
@@ -89,7 +90,7 @@ def act(self, game_state: dict) -> str:
     return action
 
 
-def state_to_features(game_state: dict, self, log:bool) -> np.array:
+def state_to_features(game_state: dict, self, log:bool=True) -> np.array:
     """
     *This is not a required function, but an idea to structure your code.*
 
@@ -105,13 +106,14 @@ def state_to_features(game_state: dict, self, log:bool) -> np.array:
     """
     # This is the dict before the game begins and after it ends
     if game_state is None:
-        return  np.array([-100, -100, -100, -100, -100, -100, -100]).reshape(1, -1)
+        return  np.array([-100, -100, -100, -100, -100, -100, -100, -100, -100]).reshape(1, -1)
     round = game_state['round']
     step = game_state['step']
     field = game_state['field']
     bombs = game_state['bombs']
     explosion_map = game_state['explosion_map']
     coins = game_state['coins']
+
     name, score, bomb, position = game_state['self']
     others = game_state['others']
     user_input = game_state['user_input']
@@ -163,18 +165,20 @@ def state_to_features(game_state: dict, self, log:bool) -> np.array:
                         explosion_map[left_pos],
                         explosion_map[position]
                         ])
+
     info = adjacent + exploding*explosion
 
-    collect = search_coin(self, game_state)
-    if collect == top_pos and info[top] == 0:
-        info[top] = -1 # go to top!
-    if collect == right_pos and info[right] == 0:
-        info[right] = -1
-    if collect == bottom_pos and info[bottom] == 0:
-        info[bottom] = -1
-    if collect == left_pos and info[left] == 0:
-        info[left] = -1
-    
+
+    #collect = search_coin(self, game_state)
+    #if collect == top_pos and info[top] == 0:
+        #info[top] = -1 # go to top!
+    #if collect == right_pos and info[right] == 0:
+        #info[right] = -1
+    #if collect == bottom_pos and info[bottom] == 0:
+        #info[bottom] = -1
+    #if collect == left_pos and info[left] == 0:
+        #info[left] = -1
+
     
     #check neighboring fields for bombs
     info[top] = np.maximum(info[top], secure(top_pos, bombs, field, self))
@@ -200,7 +204,7 @@ def state_to_features(game_state: dict, self, log:bool) -> np.array:
             info[escape] = 0
 
 
-    # discourage bomb dropping if no escape rout:
+    # discourage bomb dropping if no escape route:
     if info[current] == -1:
         self.logger.debug(f'Test escape')
         bombs.append((position, 3))
@@ -220,7 +224,38 @@ def state_to_features(game_state: dict, self, log:bool) -> np.array:
         self.logger.debug(f' info : {info}, move: {movement}')
     info = np.append(info, movement)
 
+    # distance to coins
+    # coins is e.g. [(11, 15)]
+    # coin dist is e.g. [-1]
+    # coin_rel_dist is e.g. [[-4  1]]
+
+    if len(coins) > 0:
+        coin_dist = [BFS(field, position, coin)[1] for coin in coins]
+        #print(coin_dist)
+        coin_rel_dist = np.array(coins) - np.array(position)[None,]
+        #print(coin_rel_dist)
+        idx = np.argsort(coin_dist)[0] # sort the distances
+        if coin_dist[idx] == inf: 
+            coin_info = np.zeros(3)
+
+        else:
+            coin_info = np.hstack((coin_dist[idx], coin_rel_dist[idx, :])).flatten()
+
+    else:
+        coin_info = np.zeros(3)
+    #print(coin_info)
+    
+    
+    info = np.append(info, coin_info)
+    #print(info)
+    
+
     return info.reshape(1, -1)
+
+    # info[0] - info[3]: 4 directions
+    # info[4]: current position
+    # info[5]: movement for escaping
+    # info[6] - info[8]: distance to each coin
 
 def secure(position, bombs, field, self):
     
@@ -369,6 +404,7 @@ def BFS_escape(field, position, bombs, self):
     #print("connecting path doesn't exist")
     return None
 
+
 def search_coin(self, game_state):
     """A function that finds the shortest path to the next coin (alternatively crate) and returns the next step to the coin"""
     # to be deleted later:
@@ -396,85 +432,28 @@ def search_coin(self, game_state):
     
     return move
 
-def new_search_coin(self, game_state):
-    # mit Dictionary konvertieren
+
+def get_free_neighbors(game_state):
+    """create a graph as a dict for possible movements from each position"""
+
     field = game_state['field']
-    coins = game_state['coins']
-    name, score, bomb, position = game_state['self']
 
-    """
-    direction2action = {
-    (0, 0): ACTIONS.index('WAIT'),
-    (1, 0): ACTIONS.index('RIGHT'),
-    (0, 1): ACTIONS.index('DOWN'),
-    (-1, 0): ACTIONS.index('LEFT'),
-    (0, -1): ACTIONS.index('UP')
-    }"""
+    direction = [(0,-1), (1,0), (0,1), (-1,0)] 
 
-    #print(field)
-    #print(coins)
-    #print(position)
+    x_0, y_0 = np.where(field == 0)
 
-    buffer = [([], position)]
-    visited = np.zeros_like(field)
+    free_tiles = [(x_0[i], y_0[i]) for i in range(len(x_0))] # coordinates of free tiles
 
-    while buffer:
-        path, pos = buffer.pop(0)
-        visited[pos[1], pos[0]] = 1
 
-        for d_x, d_y in [(0, 1), (1, 0), (-1, 0), (0, -1)]:
-            next_pos = pos + np.array([d_y, d_x])
-            # print(next_pos)
-            if (
-                    0 < pos[0] + d_y < len(field[0]) and
-                    0 < pos[1] + d_x < len(field) and
-                    field[next_pos[1], next_pos[0]] != -1 and
-                    not visited[next_pos[1], next_pos[0]]
-            ):
-                if tuple(next_pos) in coins:
-                    # print(f"Coin found at {next_pos}")
-                    if path:
-                        return path[0][1], path[0][0]
-                    else:
-                        return d_y, d_x
+    targets = []
+    for coord in free_tiles: # for each coordinate...
+        pos_movement = [tuple(map(sum, zip(coord, n))) for n in direction]
 
-                else:
-                    buffer.append((path + [(d_x, d_y)], next_pos))
+        targets.append([x for x in pos_movement if x in free_tiles]) # if the coordinate is in free tiles
 
-    return 0, 0 # direction dx, dy (stay)
+    graph = dict(zip(free_tiles, targets))
 
-def get_closest_coin_dist(game_state):
-    field = game_state['field']
-    coins = game_state['coins']
-    name, score, bomb, position = game_state['self']
-
-    #print(field)
-    #print(coins)
-    #print(position)
-
-    buffer = [([], position)]
-    visited = np.zeros_like(field)
-
-    while buffer:
-        path, pos = buffer.pop(0)
-        visited[pos[1], pos[0]] = 1
-
-        for d_x, d_y in [(0, 1), (1, 0), (-1, 0), (0, -1)]:
-            next_pos = pos + np.array([d_y, d_x])
-            # print(next_pos)
-            if (
-                    0 < pos[0] + d_y < len(field[0]) and
-                    0 < pos[1] + d_x < len(field) and
-                    field[next_pos[1], next_pos[0]] != -1 and
-                    not visited[next_pos[1], next_pos[0]]
-            ):
-                if tuple(next_pos) in coins:
-                    # print(f"Coin found at {next_pos}")
-                    return len(path) + 1
-
-                else:
-                    buffer.append((path + [(d_x, d_y)], next_pos))
-    return np.inf
+    return graph # {(1, 1): [(1, 0), (2, 1), (0, 1)], ...}
 
 
 def BFS(field, start, goal):
