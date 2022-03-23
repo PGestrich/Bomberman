@@ -29,7 +29,7 @@ def setup(self):
     :param self: This object is passed to all callbacks and you can set arbitrary values.
     """
 
-    
+    np.set_printoptions(formatter={'float': '{: 0.3f}'.format})
 
     
 
@@ -56,20 +56,30 @@ def act(self, game_state: dict) -> str:
     :return: The action to take as a string.
     """
 
-    random_prob = .1
-    if self.train and random.random() < random_prob:
-        self.logger.debug("Choosing action purely at random.")
-        # 80%: walk in any direction. 10% wait. 10% bomb.
-        return np.random.choice(ACTIONS, p=[.2, .2, .2, .2, .1, .1])
-
-
     features = state_to_features(game_state)
     #print('features: ', features, features.shape)
-    pred = self.model.predict(features)
+    pred = self.model.predict(features)[0]
 
     self.logger.debug(f"features: {features}")
     self.logger.debug(f"prediction: {pred}")
-    action = ACTIONS[int(pred[0,0])]
+
+    random_prob = .2
+    if self.train and random.random() < random_prob:
+        self.logger.debug("Choosing action purely at random.")
+        # 80%: walk in any direction. 10% wait. 10% bomb.
+        action = np.random.choice(ACTIONS, p=[.2, .2, .2, .2, .1, .1])
+        self.logger.debug(f"Chosen action: {action}\n")
+        return action
+
+    action = 0
+    if np.sum(pred) == 0:
+        action = np.random.choice(ACTIONS, p=[.25, .25, .25, .25, 0, 0])
+    else:
+        action = ACTIONS[np.argmax(pred)]
+
+    
+    #action = ACTIONS[int(pred[0,0])]
+    self.logger.debug(f"Chosen action: {action}\n")
 
     return action
     
@@ -189,7 +199,7 @@ def BFS_coin(field, position, coins):
         left = (node[0]  - 1, node[1])
         
         neighbours = [top, right, bottom, left]
-
+        np.random.shuffle(neighbours)
 
         # Loop to iterate over the
         # neighbours of the node
