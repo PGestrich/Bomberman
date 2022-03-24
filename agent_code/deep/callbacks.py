@@ -143,10 +143,10 @@ def state_to_features(game_state: dict) -> np.array:
             if bomb_pos == neighbours[i]:
                 adjacent[i] = -1
     
-    coin = BFS_coin(field, position, coins)
+    coin = BFS_coin(field, position, coins, others, bombs)
     
     adjacent = np.append(adjacent, coin)
-    return adjacent.reshape(1, -1)
+    return np.array([coin]).reshape(1, -1)
 
     # For example, you could construct several channels of equal shape, ...
     channels = []
@@ -156,7 +156,7 @@ def state_to_features(game_state: dict) -> np.array:
     # and return them as a vector
     return stacked_channels.reshape(-1)
 
-def BFS_coin(field, position, coins):    
+def BFS_coin(field, position, coins, others, bombs):    
     """
     Use Breadth-First-Search to find opponents and coins
     """
@@ -165,6 +165,11 @@ def BFS_coin(field, position, coins):
     explored = [(x_occupied[i], y_occupied[i]) for i in range(len(x_occupied))]
 
     amount = 0
+
+    for bomb in bombs:
+        explored.append(bomb[0])
+    for opponent in others:
+        explored.append(opponent[3])
      
     # Queue for traversing the
     # graph in the BFS

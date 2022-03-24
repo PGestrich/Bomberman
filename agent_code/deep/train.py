@@ -41,16 +41,16 @@ def setup_training(self):
     self.transitions = deque(maxlen=TRANSITION_HISTORY_SIZE)
 
     D = len(ACTIONS)
-    n_features = 5
+    n_features = 1
     inputs = layers.Input(name="input", shape=(n_features,))
 
     #layers
-    h1 = layers.Dense(name="h1", units=n_features, activation='relu')(inputs)
+    h1 = layers.Dense(name="h1", units=4*n_features, activation='relu')(inputs)
     #h1 = layers.Dropout(name="drop1", rate=0.1)(h1) #overfitting should not be a problem
-    h2 = layers.Dense(name="h2", units=n_features, activation='relu')(h1)
+    #h2 = layers.Dense(name="h2", units=n_features, activation='relu')(h1)
 
     #output
-    outputs = layers.Dense(name="output", units=len(ACTIONS), activation='softmax')(h2)
+    outputs = layers.Dense(name="output", units=len(ACTIONS), activation='softmax')(h1)
     self.model = models.Model(inputs=inputs, outputs=outputs)
     
 
@@ -69,18 +69,22 @@ def setup_training(self):
     #self.training_model = self.model.compile(optimizer='adam', loss=cce,  metrics=[tf.keras.metrics.MeanSquaredError()])
 
 
-    self.X = np.array([[0,0,0,0, -100 ], [0,0,0,0,0]])
+    #self.X = np.array([[0,0,0,0, -100 ], [0,0,0,0,0]])
+    #self.y =  np.array([[5,5,5,5,0,0], [15,5,5,5,0,0]])
 
-    
-    self.y =  np.array([[5,5,5,5,0,0], [15,5,5,5,0,0]])
+    self.X = np.array([[0], [1], [2], [3]])
+    self.y_max =  np.array([[0], [1], [2], [3]])
+    self.y =  np.array([[15,5,5,5,0,0], [5,15,5,5,0,0], [5,5,15,5,0,0], [5,5,5,15,0,0]])
+
     #print(self.y.shape)
     #print(self.y.shape)
+    """
     self.y_max = np.empty(self.y.shape[0])
     
     for idx, v in enumerate(self.y):
         maximum = np.where(v == v.max())[0]
         self.y_max[idx] = random.choice(maximum)
-
+    """
     
     #self.y_unit = np.array([v/np.linalg.norm(v) for v in self.y])
     #self.y_max = np.array([random.choice(np.argmax(v)) for v in self.y])
@@ -88,7 +92,7 @@ def setup_training(self):
     #print(self.y_unit)
     #print(self.X, self.X.shape)
     #print(self.y, self.y.shape)
-    self.model.fit(self.X, self.y_max, verbose = 0)
+    self.model.fit(self.X, self.y_max)
 
 
     
@@ -168,8 +172,11 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
     self.y[idx_s, idx_action] = q_learn(self, features, self_action, new_features, reward, idx_s, True)
 
 
-    maximum = np.where(self.y[idx_s]== self.y[idx_s].max())[0]
-    self.y_max[idx_s] = random.choice(maximum)
+    #maximum = np.where(self.y[idx_s]== self.y[idx_s].max())[0]
+    #self.y_max[idx_s] = random.choice(maximum)
+    self.logger.debug(f'expected reward: {self.y[idx_s]}, class label {self.y_max[idx_s]}')
+
+
 
 def q_learn(self, old_state, self_action: str, new_state, reward, idx_s, log = False)-> int:
     """
@@ -227,10 +234,10 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
     # Store the model
     #with open("my-saved-model.pt", "wb") as file:
     #self.y_unit = np.array([v/np.linalg.norm(v) for v in self.y])
-    if random.randint(0,100) == 5:
-        self.model.fit(self.X, self.y_max)
+    if random.randint(0,20) == 5:
+        self.model.fit(self.X, self.y_max, epochs = 50, verbose = 2)
     else:
-         self.model.fit(self.X, self.y_max, verbose = 0)
+         self.model.fit(self.X, self.y_max, epochs = 50, verbose = 0)
     self.model.save('my-saved-model.keras')
 
 
