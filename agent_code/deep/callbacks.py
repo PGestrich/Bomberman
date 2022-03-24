@@ -146,7 +146,7 @@ def state_to_features(game_state: dict) -> np.array:
     coin = BFS_coin(field, position, coins, others, bombs)
     
     adjacent = np.append(adjacent, coin)
-    return np.array([coin]).reshape(1, -1)
+    return adjacent.reshape(1, -1)
 
     # For example, you could construct several channels of equal shape, ...
     channels = []
