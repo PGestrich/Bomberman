@@ -120,7 +120,7 @@ def state_to_features(game_state: dict, self, log:bool) -> np.array:
 
 
     #meaning of numbers
-    exploding = 1
+    exploding = 3
     occupied = 2
     countdown = 1
     
@@ -227,7 +227,7 @@ def secure(position, bombs, field, self):
     Test if position is secure (Not in the way of a bomb)
     """
     
-    exploding = 1
+    exploding = 3
     occupied = 2
     countdown = 1
 
@@ -244,7 +244,7 @@ def secure(position, bombs, field, self):
         current_bomb[0] = b_pos[0] - position[0]
         current_bomb[1] = b_pos[1] - position[1]
         
-        if (i[1] == 0):
+        if (i[1] <= 0):
             countdown = exploding
 
 
@@ -287,7 +287,7 @@ def BFS_escape(field, position, bombs, oponents, self, test):
     Use Breadth-First-Search to find an escape rout from bombs
     """
     self.logger.debug(f' in BFS_escape ')
-    self.logger.debug(f'field \n  {field}')
+    #self.logger.debug(f'field \n  {field}')
 
     x_occupied, y_occupied = np.where(field != 0)
     explored = [(x_occupied[i], y_occupied[i]) for i in range(len(x_occupied))]
@@ -330,6 +330,7 @@ def BFS_escape(field, position, bombs, oponents, self, test):
         
         if node != position and node in explored:
             continue
+        
             
         
         
@@ -354,7 +355,7 @@ def BFS_escape(field, position, bombs, oponents, self, test):
         bombs_timed =[]
         for bomb in bombs:
             if bomb[1]  - (len(path) - 1) > - settings.EXPLOSION_TIMER:
-                bombs_timed.append((bomb[0], bomb[1]  - (len(path) - 1) + settings.EXPLOSION_TIMER))
+                bombs_timed.append((bomb[0], bomb[1]  - (len(path) - 1)))
 
         
         new_paths = []
@@ -380,7 +381,9 @@ def BFS_escape(field, position, bombs, oponents, self, test):
                     return 2
                 else:
                     return 3
-            
+            #don't escape over exploding tiles
+            elif safe == 3:
+                continue
             
 
             
