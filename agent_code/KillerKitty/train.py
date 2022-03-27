@@ -171,7 +171,9 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
 
     self.y = augment_data(self, old_features, self_action, new_features, events)
     self.logger.debug(f'Encountered game event(s) {events} in step {new_game_state["step"]}\n')
-    self.model.fit(self.X, np.nan_to_num(self.y))
+
+    if old_game_state['step'] % 10 == 0:
+        self.model.fit(self.X, np.nan_to_num(self.y))
 
 def end_of_round(self, last_game_state: dict, last_action: str, events: List[str]):
     """
