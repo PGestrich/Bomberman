@@ -37,7 +37,7 @@ def setup(self):
     :param self: This object is passed to all callbacks and you can set arbitrary values.
     """
 
-    if self.train or not os.path.isfile("my-saved-model.pt"):
+    if  not os.path.isfile("my-saved-model.pt"):
         self.logger.info("Setting up model from scratch.")
         self.model = DecisionTreeRegressor(random_state=0)
         #self.logger.info("Loading model from saved state.")
@@ -188,7 +188,7 @@ def state_to_features(game_state: dict, self, log:bool) -> np.array:
         info[current] = np.maximum(info[current], test_current)
     
                 
-    movement = 0
+    #movement = 0
 
     #encourage escaping into right direction 
     if info[4] in [1,3]:
@@ -210,15 +210,15 @@ def state_to_features(game_state: dict, self, log:bool) -> np.array:
             info[current] = 0
     
     #include info about opponents/coins and crates
-    movement = BFS_opponent(field, position, others, coins,  self)
+    coin, opponent = BFS_opponent(field, position, others, coins,  self)
     crate = BFS_crate(field, position, self)
     
     
     if log:
         self.logger.debug(f'adjacent : {adjacent}, explosion : {explosion}')
-        self.logger.debug(f' info : {info}, move: {movement}, crate:{crate}')
+        self.logger.debug(f' info : {info}, coin: {coin}, crate:{crate}, opponent: {opponent}')
         self.logger.debug(f' time: {time.perf_counter() - timestamp}')
-    info = np.append(info, [movement, crate])
+    info = np.append(info, [coin, crate, opponent])
     
     return info.reshape(1, -1)
 
@@ -425,10 +425,15 @@ def BFS_opponent(field, position, others, coins, self):
     o_bottom= (position[0] , position[1] + 1)
     o_left = (position[0]  - 1, position[1])
 
-    res = -100
+    coin = -100
+    opponent = -100
     found_opponent = False
+    found_coin = False
      
-     
+    #if no coins available, don't search for them
+    if coins == []:
+        found_coin = True
+
     # Loop to traverse the graph
     # with the help of the queue
     while queue:
@@ -454,50 +459,44 @@ def BFS_opponent(field, position, others, coins, self):
             if neighbour in explored:
                 continue
             
-            #check if found coin - return first step
-            if neighbour in coins:
-                self.logger.debug(f' found coin ')
-
+            #check if found coin - remember first step
+            if not found_coin and neighbour in coins:
                 path.append(neighbour)
                 if path[1] == o_top:
-                    res = 0
+                    coin = 0
                 elif path[1] == o_right:
-                    res = 1
+                    coin = 1
                 elif path[1] == o_bottom:
-                    res = 2
+                    coin = 2
                 else:
-                    res = 3
-                return res
+                    coin = 3
+                found_coin = True
             
-            #if opponent already found, only search for coin
-            if found_opponent:
-                new_path = path.copy()    
-                new_path.append(neighbour)
-                queue.append(new_path)
-                continue
 
-            #else check for opponents too
+            #check for opponents - remember first step
             for agent in others:
-                if agent[3] != neighbour:
-                    new_path = path.copy()    
-                    new_path.append(neighbour)
-                    queue.append(new_path)
+                if found_opponent or agent[3] != neighbour:
                     continue
-
                 
                 path.append(neighbour)
                 if path[1] == o_top:
-                    res = 0
+                    opponent = 0
                 elif path[1] == o_right:
-                    res = 1
+                    opponent = 1
                 elif path[1] == o_bottom:
-                    res = 2
+                    opponent = 2
                 else:
-                    res = 3
+                    opponent = 3
+                
+                found_opponent = True
 
-                #if no coin visible, stop here
-                if coins == []:
-                    return res
+            #stop here if found both
+            if found_coin and found_opponent:
+                return coin, opponent
+            #else continue search
+            new_path = path.copy()    
+            new_path.append(neighbour)
+            queue.append(new_path)
 
             
         explored.append(node)
@@ -505,7 +504,7 @@ def BFS_opponent(field, position, others, coins, self):
     
     #if opponent found, but no coins: return oponent
     #if nothing found, return original value (-100)
-    return res
+    return coin, opponent
 
 def BFS_crate(field, position, self): 
 

@@ -33,6 +33,9 @@ AVOID_OPPONENT = "AVOID OPPONENT"
 TOWARDS_CRATE = "TOWARDS CRATE"
 AVOID_CRATE = "AVOID CRATE"
 
+TOWARDS_COIN = "TOWARDS COIN"
+AVOID_COIN = "AVOID COIN"
+
 SMART_BOMB = "SMART BOMB"
 OK_BOMB = "OK BOMB"
 DUMB_BOMB = "DUMB BOMB"
@@ -40,7 +43,7 @@ DUMB_BOMB = "DUMB BOMB"
 
 
 #change in both callbacks & train!
-dead_state = np.array([-100, -100, -100, -100, -100, -100, -100]).reshape(1, -1)
+dead_state = np.array([-100]*8).reshape(1, -1)
 new_prob = [100]*6
 ACTIONS = ['UP', 'RIGHT', 'DOWN', 'LEFT', 'WAIT', 'BOMB']
 
@@ -129,15 +132,20 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
     if idx_action in range(4) :
         #moving towards opponents is good 
         if old_features[0][5] == idx_action:
-            events.append(TOWARDS_OPPONENT)
+            events.append(TOWARDS_COIN)
         elif old_features[0][5] != -100:
-            events.append(AVOID_OPPONENT)
+            events.append(AVOID_COIN)
         #crates not as imporant, but still good
         else:
             if old_features[0][6] == idx_action:
                 events.append(TOWARDS_CRATE)
             if 3 - old_features[0][6] == idx_action:
                 events.append(AVOID_CRATE)
+            
+            if old_features[0][7] == idx_action:
+                events.append(TOWARDS_OPPONENT)
+            if 3 - old_features[0][7] == idx_action:
+                events.append(AVOID_OPPONENT)
             
     
     
@@ -204,15 +212,20 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
     if idx_action in range(4) :
         #moving towards opponents is good 
         if old_features[0][5] == idx_action:
-            events.append(TOWARDS_OPPONENT)
+            events.append(TOWARDS_COIN)
         elif old_features[0][5] != -100:
-            events.append(AVOID_OPPONENT)
+            events.append(AVOID_COIN)
         #crates not as imporant, but still good
         else:
             if old_features[0][6] == idx_action:
                 events.append(TOWARDS_CRATE)
             if 3 - old_features[0][6] == idx_action:
                 events.append(AVOID_CRATE)
+            
+            if old_features[0][7] == idx_action:
+                events.append(TOWARDS_OPPONENT)
+            if 3 - old_features[0][7] == idx_action:
+                events.append(AVOID_OPPONENT)
             
     
     
@@ -261,11 +274,14 @@ def reward_from_events(self, events: List[str]) -> int:
         #e.KILLED_SELF: -20,
         INTO_DANGER: -50,
         OUT_OF_DANGER: 30,
-        TOWARDS_OPPONENT: 30,
-        AVOID_OPPONENT: -30, 
+        TOWARDS_COIN: 30,
+        AVOID_COIN: -30, 
 
         TOWARDS_CRATE: 15,
-        AVOID_CRATE: -10, 
+        AVOID_CRATE: -5, 
+
+        TOWARDS_OPPONENT: 15,
+        AVOID_OPPONENT: -5, 
 
         #SUICIDE : -100,
         SWEET_SPOT: 10, 
@@ -329,11 +345,12 @@ def augment_data(self, state, action: str, new_state, events: List[str]):
     #get original features ready to rotate
     adjacent = state[0][0:4]
     new_adjacent = new_state[0][0:4]
-    movement = state[0][5]
+    coin = state[0][5]
     crate = state[0][6]
-    new_movement = new_state[0][5]
+    opp = state[0][7]
+    new_coin = new_state[0][5]
     new_crate = new_state[0][6]
-
+    new_opp = new_state[0][7]
     
 
     #rotate parameters + already tested
@@ -347,14 +364,18 @@ def augment_data(self, state, action: str, new_state, events: List[str]):
         new_adjacent = new_adjacent[rotate]
 
         #rotate last two features
-        if movement != -100:
-            movement = (movement + 1) % 4
+        if coin != -100:
+            coin = (coin + 1) % 4
         if crate != -100:
             crate = (crate + 1) % 4
-        if new_movement != -100:
-            new_movement = (new_movement + 1) % 4
+        if opp != -100:
+            opp = (opp + 1) % 4
+        if new_coin != -100:
+            new_coin = (new_coin + 1) % 4
         if new_crate != -100:
             new_crate = (new_crate + 1) % 4
+        if new_opp != -100:
+            new_opp = (new_opp + 1) % 4
         
         #rotate action if necessary
         if rot_action in range(4):
@@ -366,8 +387,8 @@ def augment_data(self, state, action: str, new_state, events: List[str]):
         elif np.any([np.array_equal(np.append(adjacent, rot_action), ar) for ar in tested]):
             continue
         
-        rot_state = np.append(adjacent, [state[0][4], movement, crate])
-        new_rot_state = np.append(new_adjacent, [new_state[0][4], new_movement, new_crate])
+        rot_state = np.append(adjacent, [state[0][4], coin, crate, opp])
+        new_rot_state = np.append(new_adjacent, [new_state[0][4], new_coin, new_crate, new_opp])
         tested.append(rot_state)
 
         idx_s = ((self.X == rot_state).all(axis=1).nonzero())[0]
@@ -391,22 +412,28 @@ def augment_data(self, state, action: str, new_state, events: List[str]):
     rot_action = ACTIONS.index(action)
     adjacent = state[0][[2,1,0,3]]
     new_adjacent = new_state[0][[2,1,0,3]]
-    movement = state[0][5]
+    coin = state[0][5]
     crate = state[0][6]
-    new_movement = new_state[0][5]
+    opp = state[0][7]
+    new_coin = new_state[0][5]
     new_crate = new_state[0][6]
+    new_opp = new_state[0][7]
 
     #mirror everything if necessary
     if rot_action in [0, 2]:
         rot_action = (rot_action + 2) % 4
-        if movement != -100:
-            movement = (movement + 2) %4
+        if coin != -100:
+            coin = (coin + 2) %4
         if crate != -100:
             crate = (crate + 2) % 4
-        if new_movement != -100:
-            new_movement = (new_movement + 2) % 4
+        if opp != -100:
+           opp = (opp + 2) % 4
+        if new_coin != -100:
+            new_coin = (new_coin + 2) % 4
         if new_crate != -100:
             new_crate = (new_crate + 2) % 4
+        if new_opp != -100:
+           new_opp = (new_opp + 2) % 4
         events = update_event(update_event(events))
     
     
@@ -415,20 +442,24 @@ def augment_data(self, state, action: str, new_state, events: List[str]):
     for i in range(4):
         adjacent = adjacent[rotate]
         new_adjacent = new_adjacent[rotate]
-        if movement != -100:
-            movement = (movement + 1)%4
+        if coin != -100:
+            coin = (coin + 1)%4
         if crate != -100:
             crate = (crate + 1) % 4
-        if new_movement != -100:
-            new_movement = (new_movement + 1) % 4
-        if crate != -100:
+        if opp != -100:
+           opp = (opp + 1) % 4
+        if new_coin != -100:
+            new_coin = (new_coin + 1) % 4
+        if new_crate != -100:
             new_crate = (new_crate + 1) % 4
+        if new_opp != -100:
+           new_opp = (new_opp + 2) % 4
 
         if rot_action in range(4):
             rot_action = (rot_action + 1) % 4
             events = update_event(events)
-        rot_state = np.append(adjacent, [state[0][4], movement, crate])
-        new_rot_state = np.append(new_adjacent, [new_state[0][4], new_movement, new_crate])
+        rot_state = np.append(adjacent, [state[0][4], coin, crate, opp])
+        new_rot_state = np.append(new_adjacent, [new_state[0][4], new_coin, new_crate, new_opp])
         
         
         if np.any([np.array_equal(rot_state, ar) for ar in tested]):
