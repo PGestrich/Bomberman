@@ -7,7 +7,7 @@ from cmath import inf
 import settings
 
 import numpy as np
-from sklearn.tree import DecisionTreeRegressor
+from sklearn.neighbors import RadiusNeighborsRegressor
 
 move = -100
 
@@ -35,7 +35,8 @@ def setup(self):
 
     if self.train or not os.path.isfile("my-saved-model.pt"):
         self.logger.info("Setting up model from scratch.")
-        self.model = DecisionTreeRegressor(random_state=0)
+        self.model = RadiusNeighborsRegressor(random_state=0)
+
     else:
         self.logger.info("Loading model from saved state.")
         global move
@@ -62,7 +63,6 @@ def act(self, game_state: dict) -> str:
     
 
 
-    #self.logger.debug("Querying model for action.")
     self.logger.debug(f"In act")
     features = state_to_features(game_state, self, True)
     self.logger.debug(f'Adjacent:  {features}')
@@ -106,19 +106,21 @@ def state_to_features(game_state: dict, self, log:bool) -> np.array:
     # This is the dict before the game begins and after it ends
     if game_state is None:
         return  np.array([-100, -100, -100, -100, -100, -100, -100]).reshape(1, -1)
-    round = game_state['round']
+
+    # commented out variables are not used
+    # round = game_state['round']
     step = game_state['step']
     field = game_state['field']
     bombs = game_state['bombs']
     explosion_map = game_state['explosion_map']
-    coins = game_state['coins']
-    name, score, bomb, position = game_state['self']
+    # coins = game_state['coins']
+    _, _, bomb, position = game_state['self']
     others = game_state['others']
-    user_input = game_state['user_input']
+    # user_input = game_state['user_input']
     if log:
         self.logger.debug(f'position: {position}, bombs: {bombs}, step {step}')
 
-    #reset movement counter for new game
+    # reset movement counter for new game
     if step == 1:
         if self.train:
             settings.move = -100
@@ -126,23 +128,23 @@ def state_to_features(game_state: dict, self, log:bool) -> np.array:
             global move
             move = -100
 
-    #meaning of numbers
+    # meaning of numbers
     exploding = 3
     occupied = 2
-    countdown = 1
+    # countdown = 1
     
-    #top, right, bottom, left, current
+    # give an index to each of four directions and current position
     top, top_pos = 0, (position[0] , position[1] - 1)
     right, right_pos = 1, (position[0] + 1, position[1])
     bottom, bottom_pos = 2, (position[0] , position[1] + 1)
     left, left_pos = 3, (position[0]  - 1, position[1])
     current = 4
+    
     adjacent = np.array([occupied*abs(field[top_pos]),
                         occupied*abs(field[right_pos]),
-                        occupied*abs(field[bottom_pos ]),
+                        occupied*abs(field[bottom_pos]),
                         occupied*abs(field[left_pos]),
                         - bomb])
-    
     
     
     for agent in others:
@@ -155,16 +157,18 @@ def state_to_features(game_state: dict, self, log:bool) -> np.array:
             adjacent[bottom] = occupied
         if agent_pos == left_pos:
             adjacent[left] = occupied
-                        
-    #return adjacent.reshape(1, -1)
+    
+    # information about explosion
     explosion = np.array([explosion_map[top_pos ],
                         explosion_map[right_pos],
                         explosion_map[bottom_pos ],
                         explosion_map[left_pos],
                         explosion_map[position]
                         ])
+    
     info = adjacent + exploding*explosion
 
+    # information about coin 
     collect = search_coin(self, game_state)
     if collect == top_pos and info[top] == 0:
         info[top] = -1 # go to top!
@@ -176,7 +180,7 @@ def state_to_features(game_state: dict, self, log:bool) -> np.array:
         info[left] = -1
     
     
-    #check neighboring fields for bombs
+    # check neighboring fields for bombs
     info[top] = np.maximum(info[top], secure(top_pos, bombs, field, self))
     info[right] = np.maximum(info[right], secure(right_pos, bombs, field, self))
     info[bottom] = np.maximum(info[bottom], secure(bottom_pos, bombs, field, self))
@@ -191,7 +195,7 @@ def state_to_features(game_state: dict, self, log:bool) -> np.array:
                 
     movement = 0
 
-    #encourage escaping into right direction 
+    # encourage escaping into right direction 
     if info[4] in [1,3]:
         self.logger.debug(f' find escape route')
         escape = BFS_escape(field, position, bombs, self)
@@ -200,7 +204,7 @@ def state_to_features(game_state: dict, self, log:bool) -> np.array:
             info[escape] = 0
 
 
-    # discourage bomb dropping if no escape rout:
+    # discourage bomb dropping if no escape route
     if info[current] == -1:
         self.logger.debug(f'Test escape')
         bombs.append((position, 3))
@@ -223,6 +227,10 @@ def state_to_features(game_state: dict, self, log:bool) -> np.array:
     return info.reshape(1, -1)
 
 def secure(position, bombs, field, self):
+    """
+    Test if position is secure (Not in the way of a bomb)
+    Return situational awareness information of a given position
+    """
     
     exploding = 3
     occupied = 2
@@ -280,6 +288,10 @@ def secure(position, bombs, field, self):
     
     
 def BFS_escape(field, position, bombs, self):    
+    """
+    Use Breadth-First-Search to find an escape route from bombs.
+    Return an index of a safe step.
+    """ 
     self.logger.debug(f' in BFS_escape ')
     x_occupied, y_occupied = np.where(field != 0)
     explored = [(x_occupied[i], y_occupied[i]) for i in range(len(x_occupied))]
@@ -338,7 +350,6 @@ def BFS_escape(field, position, bombs, self):
             if neighbour in explored:
                 continue
             
-            
 
             if secure(neighbour, bombs_timed, field, self) == 0:
                 path.append(neighbour)
@@ -351,8 +362,6 @@ def BFS_escape(field, position, bombs, self):
                     return 2
                 else:
                     return 3
-                
-            
 
             
             new_path = path.copy()    
@@ -366,50 +375,28 @@ def BFS_escape(field, position, bombs, self):
  
     # Condition when the nodes
     # are not connected
-    #print("connecting path doesn't exist")
     return None
 
+
 def search_coin(self, game_state):
-    """A function that finds the shortest path to the next coin (alternatively crate) and returns the next step to the coin"""
-    # to be deleted later:
-    # field: all the information about the field(-1: stone walls, 0: free tiles, 1: crates)
-    # coins: coordinates of all coins
-    # position: where the agent is
-    # adjacent: describes in which direction from the position you can go e.g. top, bottom, right, left - [0, 0, -1, 0] # you can't go to the right
-
-    field = game_state['field']
-    coins = game_state['coins']
-    name, score, bomb, position = game_state['self']
-
-    move = None
-    shortest_path = inf
-
-    for coin in coins:
-        path, path_length = BFS(field, position, coin) # find shortest path to coin # e.g. ([(0, 1), (1, 1), (2, 1)], 2)
-        self.logger.debug(f'shortest path: {path}')
-        if path_length < shortest_path:
-            shortest_path = path_length
-            if len(path) >= 2: 
-                move = path[1] # remember first step to coin
-            else:
-                move = None
-    
-    return move
-
-def new_search_coin(self, game_state):
-    # mit Dictionary konvertieren
-    field = game_state['field']
-    coins = game_state['coins']
-    name, score, bomb, position = game_state['self']
-
     """
+    Find the shortest path to the next coin and return the next step to the coin.
+
+    :param dict game_state: game state information
+    :return: best step to the nearest coin
+    """
+    field = game_state['field']
+    coins = game_state['coins']
+    name, score, bomb, position = game_state['self']
+
+    # conversion from x/y coordinate of direction to index using dict
     direction2action = {
     (0, 0): ACTIONS.index('WAIT'),
     (1, 0): ACTIONS.index('RIGHT'),
     (0, 1): ACTIONS.index('DOWN'),
     (-1, 0): ACTIONS.index('LEFT'),
     (0, -1): ACTIONS.index('UP')
-    }"""
+    }
 
     #print(field)
     #print(coins)
@@ -434,23 +421,25 @@ def new_search_coin(self, game_state):
                 if tuple(next_pos) in coins:
                     # print(f"Coin found at {next_pos}")
                     if path:
-                        return path[0][1], path[0][0]
+                        return direction2action[(path[0][1], path[0][0])]
                     else:
-                        return d_y, d_x
+                        return direction2action[(d_y, d_x)]
 
                 else:
                     buffer.append((path + [(d_x, d_y)], next_pos))
 
-    return 0, 0 # direction dx, dy (stay)
+    return direction2action[(0, 0)] # direction dx, dy i.e. stay
 
-def get_closest_coin_dist(game_state):
+def get_closest_coin_dist(game_state): # used for reward in train.py
+    """
+    calculate the distance between the current position and the nearest coin
+
+    :param dict game_state: game state information
+    :return: the distance between the current position and the nearest coin
+    """
     field = game_state['field']
     coins = game_state['coins']
     name, score, bomb, position = game_state['self']
-
-    #print(field)
-    #print(coins)
-    #print(position)
 
     buffer = [([], position)]
     visited = np.zeros_like(field)
@@ -475,61 +464,3 @@ def get_closest_coin_dist(game_state):
                 else:
                     buffer.append((path + [(d_x, d_y)], next_pos))
     return np.inf
-
-
-def BFS(field, start, goal):
-    """from https://www.geeksforgeeks.org/building-an-undirected-graph-and-finding-shortest-path-using-dictionaries-in-python/"""
-    
-    
-    x_occupied, y_occupied = np.where(field != 0)
-    explored = [(x_occupied[i], y_occupied[i]) for i in range(len(x_occupied))]
-     
-    # Queue for traversing the
-    # graph in the BFS
-    queue = [[start]]
-     
-    # If the desired node is
-    # reached
-    if start == goal:
-        print("Same Node")
-        return None, 0
-     
-    # Loop to traverse the graph
-    # with the help of the queue
-    while queue:
-        path = queue.pop(0)
-        node = path[-1]
-         
-        # Condition to check if the
-        # current node is not visited
-        
-        top =(node[0] , node[1] - 1)
-        right= (node[0] + 1, node[1])
-        bottom= (node[0] , node[1] + 1)
-        left = (node[0]  - 1, node[1])
-        
-        neighbours = [top, right, bottom, left]
-            
-        # Loop to iterate over the
-        # neighbours of the node
-        for neighbour in neighbours:
-            new_path = []
-            if neighbour == goal:
-                #print("Shortest path = ", *new_path)
-                return [*new_path], len(new_path)-1
-                
-            if neighbour in explored:
-                continue
-            new_path = list(path)
-            new_path.append(neighbour)
-            queue.append(new_path)
-                
-            # Condition to check if the
-            # neighbour node is the goal
-             # return shortest path and the length
-            explored.append(node)
- 
-    # Condition when the nodes
-    # are not connected
-    #print("connecting path doesn't exist")
-    return None, inf
