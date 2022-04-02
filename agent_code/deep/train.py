@@ -40,27 +40,20 @@ def setup_training(self):
     # (s, a, r, s')
     self.transitions = deque(maxlen=TRANSITION_HISTORY_SIZE)
 
-    D = len(ACTIONS)
     n_features = 5
     inputs = layers.Input(name="input", shape=(n_features,))
 
     #layers
-    h1 = layers.Dense(name="h1", units=4*n_features, activation='relu')(inputs)
-    #h1 = layers.Dropout(name="drop1", rate=0.1)(h1) 
-    #h2 = layers.Dense(name="h2", units=2*n_features, activation='relu')(h1)
+    h1 = layers.Dense(name="h1", units=15, activation='relu')(inputs)
+    h1 = layers.Dropout(name="drop1", rate=0.1)(h1) 
+    h2 = layers.Dense(name="h2", units=10, activation='relu')(h1)
 
     #output
-    outputs = layers.Dense(name="output", units=len(ACTIONS), activation='softmax')(h1)
+    outputs = layers.Dense(name="output", units=len(ACTIONS), activation='softmax')(h2)
     self.model = models.Model(inputs=inputs, outputs=outputs)
     
-
-
-    #training
-    def R2(y, y_hat):
-        ss_res =  K.sum(K.square(y - y_hat)) 
-        ss_tot = K.sum(K.square(y - K.mean(y))) 
-        return ( 1 - ss_res/(ss_tot + K.epsilon()) )
-
+    print('\nModel:')
+    print(self.model.summary())
     cce = tf.keras.losses.SparseCategoricalCrossentropy()
 
     self.model.compile(optimizer='adam', loss=cce,  metrics=['sparse_categorical_accuracy'])
@@ -257,7 +250,7 @@ def reward_from_events(self, events: List[str]) -> int:
         e.INVALID_ACTION : -100,
         e.COIN_COLLECTED: 100,
        # e.KILLED_OPPONENT: 50,
-        e.WAITED: -50,
+        #e.WAITED: -50,
         e.BOMB_DROPPED: -50,
         MOVED: 5  # idea: the custom event is bad
     }
