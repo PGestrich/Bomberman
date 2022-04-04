@@ -27,4 +27,4 @@ Our deep learning model.
 - Prisca Gestrich
 - Maya Udaka
 
-{prisca.gestrich, maya.udaka}@stud.uni-heidelberg.de
+{gestrich, maya.udaka}@stud.uni-heidelberg.de
